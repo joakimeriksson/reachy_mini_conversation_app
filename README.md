@@ -64,8 +64,7 @@ source .venv/bin/activate
 uv sync
 ```
 
-> [!NOTE]
-> To reproduce the exact dependency set from this repo's `uv.lock`, run `uv sync --frozen`. This ensures `uv` installs directly from the lockfile without re-resolving or updating any versions.
+> **Note:** To reproduce the exact dependency set from this repo's `uv.lock`, run `uv sync --frozen`. This ensures `uv` installs directly from the lockfile without re-resolving or updating any versions.
 
 **Install optional features:**
 ```bash

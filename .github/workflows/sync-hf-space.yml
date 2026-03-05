@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          lfs: true
       - name: Sync GitHub to Hugging Face Hub
         uses: huggingface/hub-sync@v0.1.0
         with:

@@ -27,6 +27,12 @@ jobs:
       HF_HUB_DOWNLOAD_TIMEOUT: "120"
 
     steps:
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libcairo2-dev libgirepository1.0-dev
+          version: 1.0
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5

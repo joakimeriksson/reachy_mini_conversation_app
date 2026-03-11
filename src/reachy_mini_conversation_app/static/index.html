@@ -19,6 +19,29 @@
         <p class="subtitle">Configure your OpenAI key and tweak personalities without the full UI.</p>
       </header>
 
+      <aside class="privacy-notice" role="note" aria-label="Privacy notice">
+        <p>
+          <strong>Privacy notice:</strong>
+          By default, speech and camera data are sent to OpenAI's Realtime API for inference. See OpenAI's
+          <a href="https://platform.openai.com/docs/guides/your-data" target="_blank" rel="noopener">
+            data usage policy
+          </a>
+          for details.
+        </p>
+
+        <details>
+          <summary>Learn more</summary>
+
+          <p>
+            In privacy-sensitive environments, use <code>--local-vision</code> to process images on-device. See the
+            <a href="https://github.com/pollen-robotics/reachy_mini_conversation_app/blob/main/README.md" target="_blank" rel="noopener">
+              project README
+            </a>
+            for full setup instructions. An open-source approach is in the works – stay tuned for its release.
+          </p>
+        </details>
+      </aside>
+
       <div id="configured" class="panel hidden">
         <div class="panel-heading">
           <div>

@@ -13,7 +13,7 @@ from typing import Any, Callable, Optional
 
 from fastapi import FastAPI
 
-from .config import LOCKED_PROFILE, config
+from .config import LOCKED_PROFILE, AVAILABLE_VOICES, config
 from .openai_realtime import OpenaiRealtimeHandler
 from .headless_personality import (
     DEFAULT_OPTION,
@@ -272,16 +272,16 @@ def mount_personality_routes(
     async def _voices() -> list[str]:
         loop = get_loop()
         if loop is None:
-            return ["cedar"]
+            return list(AVAILABLE_VOICES)
 
         async def _get_v() -> list[str]:
             try:
                 return await handler.get_available_voices()
             except Exception:
-                return ["cedar"]
+                return list(AVAILABLE_VOICES)
 
         try:
             fut = asyncio.run_coroutine_threadsafe(_get_v(), loop)
             return fut.result(timeout=10)
         except Exception:
-            return ["cedar"]
+            return list(AVAILABLE_VOICES)

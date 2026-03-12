@@ -163,6 +163,10 @@ async function applyPersonality(name, { persist = false } = {}) {
   return await resp.json();
 }
 
+// Full list from https://developers.openai.com/api/docs/guides/text-to-speech/#voice-options
+// "marin" and "cedar" are recommended for gpt-realtime.
+const VOICE_FALLBACK = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "marin", "sage", "shimmer", "verse"];
+
 async function getVoices() {
   try {
     const url = new URL("/voices", window.location.origin);
@@ -171,7 +175,7 @@ async function getVoices() {
     if (!resp.ok) throw new Error("voices_failed");
     return await resp.json();
   } catch (e) {
-    return ["cedar"];
+    return VOICE_FALLBACK;
   }
 }
 

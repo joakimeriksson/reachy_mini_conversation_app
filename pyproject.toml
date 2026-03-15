@@ -52,6 +52,9 @@ all_vision = [
   "supervision",
   "mediapipe==0.10.14",
 ]
+mcp = [
+  "fastmcp>=2.8,<3",
+]
 
 [dependency-groups]
 dev = [

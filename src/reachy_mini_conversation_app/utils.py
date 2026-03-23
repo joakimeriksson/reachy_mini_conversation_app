@@ -1,20 +1,31 @@
+from __future__ import annotations
+import sys
 import logging
 import argparse
 import warnings
-from typing import Any, Tuple, Optional
+import subprocess
+from typing import TYPE_CHECKING, Optional
 
 from reachy_mini import ReachyMini
 from reachy_mini_conversation_app.camera_worker import CameraWorker
 
 
-def parse_args() -> Tuple[argparse.Namespace, list]:  # type: ignore
+if TYPE_CHECKING:
+    from reachy_mini_conversation_app.vision.processors import VisionProcessor
+
+
+class CameraVisionInitializationError(Exception):
+    """Raised when camera or vision setup fails in an expected way."""
+
+
+def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
     """Parse command line arguments."""
     parser = argparse.ArgumentParser("Reachy Mini Conversation App")
     parser.add_argument(
         "--head-tracker",
-        choices=["yolo", "mediapipe", None],
+        choices=["yolo", "mediapipe"],
         default=None,
-        help="Choose head tracker (default: None)",
+        help="Head-tracking backend: yolo uses a local face detector, mediapipe uses reachy_mini_toolbox. Disabled by default.",
     )
     parser.add_argument("--no-camera", default=False, action="store_true", help="Disable camera usage")
     parser.add_argument(
@@ -34,18 +45,16 @@ def parse_args() -> Tuple[argparse.Namespace, list]:  # type: ignore
     return parser.parse_known_args()
 
 
-def handle_vision_stuff(args: argparse.Namespace, current_robot: ReachyMini) -> Tuple[CameraWorker | None, Any, Any]:
-    """Initialize camera, head tracker, camera worker, and vision manager.
-
-    By default, vision is handled by gpt-realtime model when camera tool is used.
-    If --local-vision flag is used, a local vision model will process images periodically.
-    """
-    camera_worker = None
+def initialize_camera_and_vision(
+    args: argparse.Namespace,
+    current_robot: ReachyMini,
+) -> tuple[CameraWorker | None, VisionProcessor | None]:
+    """Initialize camera capture, optional head tracking, and optional local vision."""
+    camera_worker: Optional[CameraWorker] = None
     head_tracker = None
-    vision_manager = None
+    vision_processor: Optional[VisionProcessor] = None
 
     if not args.no_camera:
-        # Initialize head tracker if specified
         if args.head_tracker is not None:
             if args.head_tracker == "yolo":
                 from reachy_mini_conversation_app.vision.yolo_head_tracker import HeadTracker
@@ -56,25 +65,39 @@ def handle_vision_stuff(args: argparse.Namespace, current_robot: ReachyMini) -> 
 
                 head_tracker = HeadTracker()
 
-        # Initialize camera worker
         camera_worker = CameraWorker(current_robot, head_tracker)
 
-        # Initialize vision manager only if local vision is requested
         if args.local_vision:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "from reachy_mini_conversation_app.vision.processors import VisionProcessor",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode < 0:
+                raise CameraVisionInitializationError(
+                    "Local vision import crashed on this machine. "
+                    "Run without --local-vision or install compatible dependencies.",
+                )
             try:
-                from reachy_mini_conversation_app.vision.processors import initialize_vision_manager
+                from reachy_mini_conversation_app.vision.processors import initialize_vision_processor
 
-                vision_manager = initialize_vision_manager(camera_worker)
             except ImportError as e:
-                raise ImportError(
+                raise CameraVisionInitializationError(
                     "To use --local-vision, please install the extra dependencies: pip install '.[local_vision]'",
                 ) from e
+
+            vision_processor = initialize_vision_processor()
         else:
             logging.getLogger(__name__).info(
                 "Using gpt-realtime for vision (default). Use --local-vision for local processing.",
             )
 
-    return camera_worker, head_tracker, vision_manager
+    return camera_worker, vision_processor
 
 
 def setup_logger(debug: bool) -> logging.Logger:
@@ -102,6 +125,7 @@ def setup_logger(debug: bool) -> logging.Logger:
         logging.getLogger("fastrtc").setLevel(logging.ERROR)
         logging.getLogger("aioice").setLevel(logging.WARNING)
     return logger
+
 
 def log_connection_troubleshooting(logger: logging.Logger, robot_name: Optional[str]) -> None:
     """Log troubleshooting steps for connection issues."""

@@ -6,7 +6,7 @@ from setuptools import setup
 from setuptools.command.build_py import build_py
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).parent.resolve()
 SOURCE_PROFILES_DIR = PROJECT_ROOT / "profiles"
 TARGET_PACKAGE = "reachy_talk_data"
 TARGET_SUBDIR = "profiles"

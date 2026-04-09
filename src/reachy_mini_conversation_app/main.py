@@ -55,15 +55,13 @@ def run(
 
     if hasattr(args, "mcp_servers") and args.mcp_servers:
         from reachy_mini_conversation_app.config import config
+
         os.environ["MCP_SERVER_URLS"] = args.mcp_servers
         config.MCP_SERVER_URLS = args.mcp_servers
         logger.info("MCP server URLs set from CLI: %s", args.mcp_servers)
 
     if args.no_camera and args.head_tracker is not None:
-        logger.warning(
-            "Head tracking disabled: --no-camera flag is set. "
-            "Remove --no-camera to enable head tracking."
-        )
+        logger.warning("Head tracking disabled: --no-camera flag is set. Remove --no-camera to enable head tracking.")
 
     if robot is None:
         try:
@@ -75,25 +73,17 @@ def run(
             robot = ReachyMini(**robot_kwargs)
 
         except TimeoutError as e:
-            logger.error(
-                "Connection timeout: Failed to connect to Reachy Mini daemon. "
-                f"Details: {e}"
-            )
+            logger.error(f"Connection timeout: Failed to connect to Reachy Mini daemon. Details: {e}")
             log_connection_troubleshooting(logger, args.robot_name)
             sys.exit(1)
 
         except ConnectionError as e:
-            logger.error(
-                "Connection failed: Unable to establish connection to Reachy Mini. "
-                f"Details: {e}"
-            )
+            logger.error(f"Connection failed: Unable to establish connection to Reachy Mini. Details: {e}")
             log_connection_troubleshooting(logger, args.robot_name)
             sys.exit(1)
 
         except Exception as e:
-            logger.error(
-                f"Unexpected error during robot initialization: {type(e).__name__}: {e}"
-            )
+            logger.error(f"Unexpected error during robot initialization: {type(e).__name__}: {e}")
             logger.error("Please check your configuration and try again.")
             sys.exit(1)
 
@@ -155,7 +145,11 @@ def run(
             value=os.getenv("OPENAI_API_KEY") if not get_space() else "",
         )
 
+        from reachy_mini_conversation_app.gradio_mcp import McpUI
         from reachy_mini_conversation_app.gradio_personality import PersonalityUI
+
+        mcp_ui = McpUI()
+        mcp_ui.create_components()
 
         personality_ui = PersonalityUI()
         personality_ui.create_components()
@@ -167,6 +161,7 @@ def run(
             additional_inputs=[
                 chatbot,
                 api_key_textbox,
+                *mcp_ui.additional_inputs_ordered(),
                 *personality_ui.additional_inputs_ordered(),
             ],
             additional_outputs=[chatbot],
@@ -179,6 +174,7 @@ def run(
         else:
             app = settings_app
 
+        mcp_ui.wire_events(handler, stream_manager)
         personality_ui.wire_events(handler, stream_manager)
 
         app = gr.mount_gradio_app(app, stream.ui, path="/")

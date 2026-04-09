@@ -85,6 +85,36 @@ async function saveKey(key) {
   return await resp.json();
 }
 
+// ---------- MCP API ----------
+async function getMcpStatus() {
+  try {
+    const url = new URL("/mcp/status", window.location.origin);
+    url.searchParams.set("_", Date.now().toString());
+    const resp = await fetchWithTimeout(url, {}, 3000);
+    if (!resp.ok) return { servers: "", connected: false };
+    return await resp.json();
+  } catch (e) {
+    return { servers: "", connected: false };
+  }
+}
+
+async function connectMcp(serversText) {
+  const resp = await fetchWithTimeout(
+    new URL("/mcp/connect", window.location.origin),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ servers: serversText }),
+    },
+    15000,
+  );
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    throw new Error(data.error || "connect_failed");
+  }
+  return await resp.json();
+}
+
 // ---------- Personalities API ----------
 async function getPersonalities() {
   const url = new URL("/personalities", window.location.origin);
@@ -274,6 +304,47 @@ async function init() {
         statusEl.textContent = "Failed to validate/save key. Please try again.";
       }
       statusEl.className = "status error";
+    }
+  });
+
+  // MCP panel elements
+  const mcpPanel = document.getElementById("mcp-panel");
+  const mcpServers = document.getElementById("mcp-servers-ta");
+  const mcpConnectBtn = document.getElementById("mcp-connect-btn");
+  const mcpStatus = document.getElementById("mcp-status");
+  const mcpChip = document.getElementById("mcp-chip");
+
+  // Always show MCP panel and load current config
+  show(mcpPanel, true);
+  try {
+    const mcpState = await getMcpStatus();
+    if (mcpState.servers) {
+      mcpServers.value = mcpState.servers.split(",").map((s) => s.trim()).filter(Boolean).join("\n");
+    }
+    if (mcpState.tool_count > 0) {
+      mcpStatus.textContent = `${mcpState.tool_count} tool(s) connected.`;
+      mcpStatus.className = "status ok";
+      mcpChip.textContent = "Connected";
+      mcpChip.className = "chip chip-ok";
+    }
+  } catch (e) {}
+
+  mcpConnectBtn.addEventListener("click", async () => {
+    mcpStatus.textContent = "Connecting...";
+    mcpStatus.className = "status";
+    mcpChip.textContent = "Connecting";
+    mcpChip.className = "chip";
+    try {
+      const res = await connectMcp(mcpServers.value);
+      mcpStatus.textContent = res.status || "Connected.";
+      mcpStatus.className = "status ok";
+      mcpChip.textContent = res.tool_count > 0 ? "Connected" : "Optional";
+      mcpChip.className = res.tool_count > 0 ? "chip chip-ok" : "chip";
+    } catch (e) {
+      mcpStatus.textContent = `Failed: ${e.message}`;
+      mcpStatus.className = "status error";
+      mcpChip.textContent = "Error";
+      mcpChip.className = "chip";
     }
   });
 

@@ -71,6 +71,25 @@
         </div>
       </div>
 
+      <div id="mcp-panel" class="panel hidden">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">MCP Servers</p>
+            <h2>External tools</h2>
+          </div>
+          <span id="mcp-chip" class="chip">Optional</span>
+        </div>
+        <p class="muted">Connect to remote MCP servers for additional tools. One server per line, optionally with a bearer token.</p>
+        <div class="row">
+          <label for="mcp-servers-ta">Server URLs</label>
+          <textarea id="mcp-servers-ta" rows="3" placeholder="http://host:8000/sse&#10;https://other/mcp token=eyJ..."></textarea>
+        </div>
+        <div class="actions">
+          <button id="mcp-connect-btn">Connect</button>
+          <p id="mcp-status" class="status"></p>
+        </div>
+      </div>
+
       <div id="personality-panel" class="panel hidden">
         <div class="panel-heading">
           <div>

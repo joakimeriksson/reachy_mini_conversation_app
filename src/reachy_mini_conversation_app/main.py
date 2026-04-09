@@ -53,6 +53,12 @@ def run(
     logger = setup_logger(args.debug)
     logger.info("Starting Reachy Mini Conversation App")
 
+    if hasattr(args, "mcp_servers") and args.mcp_servers:
+        from reachy_mini_conversation_app.config import config
+        os.environ["MCP_SERVER_URLS"] = args.mcp_servers
+        config.MCP_SERVER_URLS = args.mcp_servers
+        logger.info("MCP server URLs set from CLI: %s", args.mcp_servers)
+
     if args.no_camera and args.head_tracker is not None:
         logger.warning(
             "Head tracking disabled: --no-camera flag is set. "

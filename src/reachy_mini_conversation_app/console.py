@@ -303,6 +303,67 @@ class LocalStream:
                 logger.warning(f"API key validation failed: {e}")
                 return JSONResponse({"valid": False, "error": "validation_error"}, status_code=500)
 
+        # ---------- MCP routes ----------
+
+        @self._settings_app.get("/mcp/status")
+        def _mcp_status() -> JSONResponse:
+            servers = getattr(config, "MCP_SERVER_URLS", None) or ""
+            from reachy_mini_conversation_app.mcp_client import _manager
+
+            tool_count = len(_manager._tool_names) if _manager is not None else 0
+            return JSONResponse({"servers": servers, "tool_count": tool_count})
+
+        class McpConnectPayload(BaseModel):
+            servers: str
+
+        @self._settings_app.post("/mcp/connect")
+        def _mcp_connect(payload: McpConnectPayload) -> JSONResponse:
+            from reachy_mini_conversation_app.mcp_client import shutdown_mcp, register_mcp_tools
+
+            raw = payload.servers.strip()
+            csv_value = ",".join(line.strip() for line in raw.splitlines() if line.strip())
+
+            # Update config and env (sync — safe from any thread)
+            config.MCP_SERVER_URLS = csv_value if csv_value else None
+            if csv_value:
+                os.environ["MCP_SERVER_URLS"] = csv_value
+            else:
+                os.environ.pop("MCP_SERVER_URLS", None)
+            self._persist_mcp_servers(csv_value if csv_value else None)
+
+            if not csv_value:
+                return JSONResponse({"status": "Disconnected. No servers configured.", "tool_count": 0})
+
+            # Schedule async MCP work on the main event loop (avoid cross-loop errors)
+            loop = self._asyncio_loop
+            if loop is None:
+                return JSONResponse({"error": "Event loop not ready"}, status_code=503)
+
+            async def _do_connect() -> dict:
+                await shutdown_mcp()
+                count = await register_mcp_tools()
+                try:
+                    await self.handler._restart_session()
+                    return {
+                        "status": f"Connected! {count} MCP tool(s) registered. Session restarted.",
+                        "tool_count": count,
+                    }
+                except Exception as e:
+                    return {
+                        "status": f"Connected {count} tool(s), but session restart failed: {e}",
+                        "tool_count": count,
+                    }
+
+            try:
+                import asyncio as _aio
+
+                fut = _aio.run_coroutine_threadsafe(_do_connect(), loop)
+                result = fut.result(timeout=30)
+                return JSONResponse(result)
+            except Exception as e:
+                logger.error("MCP connect failed: %s", e)
+                return JSONResponse({"error": str(e)}, status_code=500)
+
         self._settings_initialized = True
 
     def launch(self) -> None:

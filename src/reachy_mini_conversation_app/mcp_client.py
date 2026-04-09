@@ -251,7 +251,8 @@ async def register_mcp_tools() -> int:
         logger.debug("MCP tools already registered; skipping.")
         return 0
 
-    servers = _parse_mcp_servers(getattr(config, "MCP_SERVER_URLS", None) or os.environ.get("MCP_SERVER_URLS"))
+    raw = getattr(config, "MCP_SERVER_URLS", None) or os.environ.get("MCP_SERVER_URLS")
+    servers = _parse_mcp_servers(raw)
     if not servers:
         logger.debug("No MCP_SERVER_URLS configured; skipping MCP registration.")
         return 0

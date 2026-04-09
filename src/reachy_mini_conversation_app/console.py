@@ -202,6 +202,38 @@ class LocalStream:
         except Exception as e:
             logger.warning("Failed to persist REACHY_MINI_CUSTOM_PROFILE: %s", e)
 
+    def _persist_mcp_servers(self, csv_value: Optional[str]) -> None:
+        """Persist MCP_SERVER_URLS to the instance .env file."""
+        if not self._instance_path:
+            return
+        try:
+            env_path = Path(self._instance_path) / ".env"
+            lines = self._read_env_lines(env_path)
+            replaced = False
+            for i, ln in enumerate(list(lines)):
+                if ln.strip().startswith("MCP_SERVER_URLS="):
+                    if csv_value:
+                        lines[i] = f'MCP_SERVER_URLS="{csv_value}"'
+                    else:
+                        lines.pop(i)
+                    replaced = True
+                    break
+            if csv_value and not replaced:
+                lines.append(f'MCP_SERVER_URLS="{csv_value}"')
+            if csv_value is None and not env_path.exists():
+                return
+            final_text = "\n".join(lines) + "\n"
+            env_path.write_text(final_text, encoding="utf-8")
+            logger.info("Persisted MCP_SERVER_URLS to %s", env_path)
+            try:
+                from dotenv import load_dotenv
+
+                load_dotenv(dotenv_path=str(env_path), override=True)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.warning("Failed to persist MCP_SERVER_URLS: %s", e)
+
     def _read_persisted_personality(self) -> Optional[str]:
         """Read persisted startup personality from instance .env (if any)."""
         if not self._instance_path:

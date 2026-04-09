@@ -46,7 +46,8 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
         "--mcp-servers",
         type=str,
         default=None,
-        help="Comma-separated MCP server URLs (overrides MCP_SERVER_URLS env var)",
+        help="Comma-separated MCP server URLs (overrides MCP_SERVER_URLS env var). "
+        "Append ' token=<jwt>' or ' api_key=<key>' after a URL for auth.",
     )
     return parser.parse_known_args()
 

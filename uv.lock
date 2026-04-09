@@ -4819,7 +4819,7 @@ requires-dist = [
     { name = "accelerate", marker = "extra == 'all-vision'", specifier = ">=1.13.0" },
     { name = "accelerate", marker = "extra == 'local-vision'", specifier = ">=1.13.0" },
     { name = "aiortc", specifier = ">=1.13.0" },
-    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=2.8,<3" },
+    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=2.8" },
     { name = "fastrtc", specifier = ">=0.0.34" },
     { name = "gradio", specifier = "==5.50.1.dev1" },
     { name = "gradio-client", specifier = ">=1.13.3" },

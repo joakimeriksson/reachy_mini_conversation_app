@@ -7,9 +7,10 @@ exposes their tools alongside the built-in local tools.  Fully optional
 """
 
 from __future__ import annotations
+import os
 import json
 import logging
-import os
+import dataclasses
 from typing import Any, Dict, List
 
 from reachy_mini_conversation_app.config import config
@@ -21,14 +22,70 @@ logger = logging.getLogger(__name__)
 _manager: McpClientManager | None = None
 
 
-def _parse_mcp_urls(raw: str | None) -> List[str]:
-    """Parse a comma-separated string of MCP server URLs.
+@dataclasses.dataclass
+class McpServerConfig:
+    """Configuration for a single MCP server endpoint."""
 
-    Returns an empty list when *raw* is ``None`` or blank.
+    url: str
+    token: str | None = None
+    api_key: str | None = None
+
+
+def _parse_mcp_servers(raw: str | None) -> list[McpServerConfig]:
+    """Parse MCP server config from a comma-separated string.
+
+    Each entry is a URL optionally followed by ``token=<bearer_token>``.
+    Plain URLs (no token) are supported for backward compatibility.
+
+    Examples::
+
+        "http://host:8000/sse"
+        "http://host:8000/sse,https://other/mcp token=eyJ..."
+        "https://dirigera.botbox.se/mcp api_key=a574..."
     """
     if not raw or not raw.strip():
         return []
-    return [url.strip() for url in raw.split(",") if url.strip()]
+    servers: list[McpServerConfig] = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        parts = entry.split(None, 1)  # split on first whitespace
+        url = parts[0]
+        token = None
+        api_key = None
+        if len(parts) > 1:
+            suffix = parts[1]
+            if suffix.startswith("token="):
+                token = suffix[len("token=") :]
+            elif suffix.startswith("api_key="):
+                api_key = suffix[len("api_key=") :]
+        servers.append(McpServerConfig(url=url, token=token, api_key=api_key))
+    return servers
+
+
+async def _fetch_token(server: McpServerConfig) -> str:
+    """Exchange an API key for a JWT token via the server's ``/auth/token`` endpoint.
+
+    Derives the auth URL from the MCP URL by replacing the path with ``/auth/token``.
+    """
+    from urllib.parse import urljoin
+
+    auth_url = urljoin(server.url, "/auth/token")
+    logger.info("Fetching MCP token from %s", auth_url)
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(auth_url, json={"api_key": server.api_key})
+            resp.raise_for_status()
+            token = resp.json()["token"]
+            logger.info("Successfully obtained MCP token from %s", auth_url)
+            return token
+    except Exception as exc:
+        logger.error("Failed to fetch MCP token from %s: %s", auth_url, exc)
+        raise
 
 
 class McpToolWrapper:
@@ -112,7 +169,7 @@ class McpClientManager:
         self._clients: List[Any] = []
         self._tool_names: List[str] = []
 
-    async def connect_and_register(self, server_urls: List[str]) -> int:
+    async def connect_and_register(self, servers: list[McpServerConfig]) -> int:
         """Connect to each MCP server and register discovered tools.
 
         Returns the total number of MCP tools registered.
@@ -131,11 +188,16 @@ class McpClientManager:
         from reachy_mini_conversation_app.tools.core_tools import ALL_TOOLS, ALL_TOOL_SPECS
 
         total = 0
-        for url in server_urls:
+        for server in servers:
             try:
+                # Resolve auth: api_key → fetch JWT, token → use directly
+                auth = server.token
+                if server.api_key and not auth:
+                    auth = await _fetch_token(server)
+
                 # Pass URL directly — fastmcp auto-detects transport
                 # (tries Streamable HTTP first, falls back to SSE)
-                client = Client(url)
+                client = Client(server.url, auth=auth)
                 await client.__aenter__()
                 self._clients.append(client)
 
@@ -145,12 +207,12 @@ class McpClientManager:
                     ALL_TOOLS[wrapper.name] = wrapper  # type: ignore[assignment]
                     ALL_TOOL_SPECS.append(wrapper.spec())
                     self._tool_names.append(wrapper.name)
-                    logger.info("Registered MCP tool: %s (from %s)", wrapper.name, url)
+                    logger.info("Registered MCP tool: %s (from %s)", wrapper.name, server.url)
                     total += 1
 
-                logger.info("Connected to MCP server %s — %d tools", url, len(tools))
+                logger.info("Connected to MCP server %s — %d tools", server.url, len(tools))
             except Exception as exc:
-                logger.warning("Failed to connect to MCP server %s: %s", url, exc)
+                logger.warning("Failed to connect to MCP server %s: %s", server.url, exc)
 
         return total
 
@@ -189,14 +251,14 @@ async def register_mcp_tools() -> int:
         logger.debug("MCP tools already registered; skipping.")
         return 0
 
-    urls = _parse_mcp_urls(getattr(config, "MCP_SERVER_URLS", None) or os.environ.get("MCP_SERVER_URLS"))
-    if not urls:
+    servers = _parse_mcp_servers(getattr(config, "MCP_SERVER_URLS", None) or os.environ.get("MCP_SERVER_URLS"))
+    if not servers:
         logger.debug("No MCP_SERVER_URLS configured; skipping MCP registration.")
         return 0
 
     _manager = McpClientManager()
-    count = await _manager.connect_and_register(urls)
-    logger.info("MCP registration complete: %d tools from %d server(s)", count, len(urls))
+    count = await _manager.connect_and_register(servers)
+    logger.info("MCP registration complete: %d tools from %d server(s)", count, len(servers))
     return count
 
 

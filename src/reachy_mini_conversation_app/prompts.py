@@ -92,13 +92,14 @@ def get_session_instructions() -> str:
 
 
 def get_session_voice(default: str | None = None) -> str:
-    """Resolve the Piper voice to use for the session.
+    """Resolve the voice to use for the session, for the active TTS backend.
 
     If a custom profile is selected and contains a ``voice.txt``, return its
-    trimmed content (a Piper voice name or .onnx path); otherwise fall back to
-    *default* or the configured ``PIPER_VOICE``.
+    trimmed content; otherwise fall back to *default* or the configured voice
+    (``TTS_VOICE`` for the remote backend, else ``PIPER_VOICE``).
     """
-    default = default or config.PIPER_VOICE
+    if default is None:
+        default = config.TTS_VOICE if config.TTS_BACKEND == "remote" else config.PIPER_VOICE
     profile = config.REACHY_MINI_CUSTOM_PROFILE
     if not profile:
         return default

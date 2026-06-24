@@ -192,7 +192,18 @@ class Config:
     # Enable chain-of-thought "thinking" for the chat model (slower, sometimes better).
     OLLAMA_THINK = _env_flag("OLLAMA_THINK", default=False)
 
-    # --- Piper TTS ---
+    # --- Text-to-speech backend ---
+    # "piper" = local Piper (default); "remote" = external voice generator via an
+    # OpenAI-compatible /v1/audio/speech endpoint (thin-client / on-prem setup).
+    TTS_BACKEND = (os.getenv("TTS_BACKEND", "piper") or "piper").strip().lower()
+    # Remote TTS (when TTS_BACKEND=remote): full speech endpoint URL.
+    TTS_URL = os.getenv("TTS_URL", "")  # e.g. http://voicehost:8880/v1/audio/speech
+    TTS_MODEL = os.getenv("TTS_MODEL", "tts-1")
+    TTS_VOICE = os.getenv("TTS_VOICE", "alloy")
+    TTS_FORMAT = os.getenv("TTS_FORMAT", "wav")  # wav/flac/ogg (decoded via soundfile)
+    TTS_API_KEY = os.getenv("TTS_API_KEY")  # optional bearer token
+
+    # --- Piper TTS (when TTS_BACKEND=piper) ---
     # Voice (ONNX): a voice name resolvable in PIPER_DATA_DIR or an absolute .onnx
     # path. Profiles may override via their voice.txt.
     PIPER_VOICE = os.getenv("PIPER_VOICE", "en_US-lessac-medium")

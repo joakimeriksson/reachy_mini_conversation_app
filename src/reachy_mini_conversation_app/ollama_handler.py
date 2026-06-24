@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,7 +28,7 @@ from fastrtc import AdditionalOutputs, AsyncStreamHandler, wait_for_item
 from scipy.signal import resample
 
 from reachy_mini_conversation_app.audio.gemma_stt import GemmaSTT
-from reachy_mini_conversation_app.audio.piper_tts import PiperTTS
+from reachy_mini_conversation_app.audio.tts import make_tts
 from reachy_mini_conversation_app.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
 from reachy_mini_conversation_app.config import config, set_custom_profile
 from reachy_mini_conversation_app.llm.ollama_chat import OllamaChat
@@ -79,7 +79,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         # Backends are built in start_up() so construction stays cheap/import-safe.
         self._stt: Optional[GemmaSTT] = None
         self._chat: Optional[OllamaChat] = None
-        self._tts: Optional[PiperTTS] = None
+        self._tts: Any = None  # PiperTTS or RemoteTTS (audio.tts.make_tts)
         self._voice = config.PIPER_VOICE
 
         self._speaking = False  # True while synthesizing/playing a reply (half-duplex gate)
@@ -97,7 +97,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         instructions = get_session_instructions()
         self._stt = GemmaSTT(config.OLLAMA_STT_MODEL, config.OLLAMA_URL)
         self._chat = OllamaChat(config.OLLAMA_MODEL, config.OLLAMA_URL, self.deps, instructions)
-        self._tts = PiperTTS(config.PIPER_VOICE, config.PIPER_DATA_DIR)
+        self._tts = make_tts()
         self._voice = get_session_voice()
 
         try:

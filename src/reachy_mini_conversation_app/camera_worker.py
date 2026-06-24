@@ -25,10 +25,25 @@ logger = logging.getLogger(__name__)
 class CameraWorker:
     """Thread-safe camera worker with frame buffering and face tracking."""
 
-    def __init__(self, reachy_mini: ReachyMini, head_tracker: Any = None) -> None:
-        """Initialize."""
+    def __init__(
+        self,
+        reachy_mini: ReachyMini,
+        head_tracker: Any = None,
+        local_webcam: bool = False,
+        webcam_index: int = 0,
+    ) -> None:
+        """Initialize.
+
+        ``local_webcam`` is a development-only fallback: when ``robot.media``
+        has no camera (e.g. desktop simulation), frames are read from the local
+        machine's webcam via OpenCV. OpenCV is imported lazily and is NOT a
+        robot dependency — leave ``local_webcam`` False on the robot.
+        """
         self.reachy_mini = reachy_mini
         self.head_tracker = head_tracker
+        self._local_webcam = local_webcam
+        self._webcam_index = webcam_index
+        self._webcam_cap: Any = None
 
         # Thread-safe frame storage
         self.latest_frame: NDArray[np.uint8] | None = None
@@ -91,8 +106,35 @@ class CameraWorker:
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join()
+        if self._webcam_cap is not None:
+            try:
+                self._webcam_cap.release()
+            except Exception:
+                pass
+            self._webcam_cap = None
 
         logger.debug("Camera worker stopped")
+
+    def _read_webcam(self) -> NDArray[np.uint8] | None:
+        """Dev-only: read a BGR frame from the local webcam via OpenCV (lazy import)."""
+        if self._webcam_cap is None:
+            try:
+                import cv2  # dev-only dependency (extras: localdev)
+            except ImportError:
+                logger.error(
+                    "--local-webcam requires OpenCV. Install with: pip install '.[localdev]'"
+                )
+                self._local_webcam = False
+                return None
+            self._webcam_cap = cv2.VideoCapture(self._webcam_index)
+            if not self._webcam_cap.isOpened():
+                logger.error("Could not open local webcam at index %d", self._webcam_index)
+                self._webcam_cap = None
+                self._local_webcam = False
+                return None
+            logger.info("Local webcam fallback active (index %d)", self._webcam_index)
+        ok, frame = self._webcam_cap.read()
+        return frame if ok else None
 
     def working_loop(self) -> None:
         """Enable the camera worker loop.
@@ -109,8 +151,10 @@ class CameraWorker:
             try:
                 current_time = time.time()
 
-                # Get frame from robot
+                # Get frame from robot, falling back to a local webcam in dev.
                 frame = self.reachy_mini.media.get_frame()
+                if frame is None and self._local_webcam:
+                    frame = self._read_webcam()
 
                 if frame is not None:
                     # Thread-safe frame storage

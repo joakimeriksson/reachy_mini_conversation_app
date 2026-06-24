@@ -3,8 +3,7 @@ import asyncio
 import logging
 from typing import Any, Dict
 
-import cv2
-
+from reachy_mini_conversation_app.image_utils import encode_jpeg
 from reachy_mini_conversation_app.tools.core_tools import Tool, ToolDependencies
 
 
@@ -55,10 +54,6 @@ class Camera(Tool):
                 else {"error": "vision returned non-string"}
             )
 
-        # Encode image directly to JPEG bytes without writing to file
-        success, buffer = cv2.imencode('.jpg', frame)
-        if not success:
-            raise RuntimeError("Failed to encode frame as JPEG")
-
-        b64_encoded = base64.b64encode(buffer.tobytes()).decode("utf-8")
+        # Encode to JPEG via Pillow (keeps the robot wheel free of OpenCV).
+        b64_encoded = base64.b64encode(encode_jpeg(frame)).decode("utf-8")
         return {"b64_im": b64_encoded}

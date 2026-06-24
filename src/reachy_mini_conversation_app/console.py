@@ -1,12 +1,9 @@
 """Bidirectional local audio stream with optional settings UI.
 
-In headless mode, there is no Gradio UI. If the OpenAI API key is not
-available via environment/.env, we expose a minimal settings page via the
-Reachy Mini Apps settings server to let non-technical users enter it.
-
-The settings UI is served from this package's ``static/`` folder and offers a
-single password field to set ``OPENAI_API_KEY``. Once set, we persist it to the
-app instance's ``.env`` file (if available) and proceed to start streaming.
+The conversation backend is fully local (Ollama + Piper) and needs no API key.
+In headless mode there is no Gradio UI, but when a Reachy Mini Apps settings
+server is available we still expose a minimal settings page (served from this
+package's ``static/`` folder) with personality selection and MCP server config.
 """
 
 import os
@@ -23,7 +20,7 @@ from scipy.signal import resample
 from reachy_mini import ReachyMini
 from reachy_mini.media.media_manager import MediaBackend
 from reachy_mini_conversation_app.config import LOCKED_PROFILE, config
-from reachy_mini_conversation_app.openai_realtime import OpenaiRealtimeHandler
+from reachy_mini_conversation_app.ollama_handler import OllamaConversationHandler
 from reachy_mini_conversation_app.headless_personality_ui import mount_personality_routes
 
 
@@ -49,13 +46,13 @@ class LocalStream:
 
     def __init__(
         self,
-        handler: OpenaiRealtimeHandler,
+        handler: OllamaConversationHandler,
         robot: ReachyMini,
         *,
         settings_app: Optional[FastAPI] = None,
         instance_path: Optional[str] = None,
     ):
-        """Initialize the stream with an OpenAI realtime handler and pipelines.
+        """Initialize the stream with a conversation handler and media pipelines.
 
         - ``settings_app``: the Reachy Mini Apps FastAPI to attach settings endpoints.
         - ``instance_path``: directory where per-instance ``.env`` should be stored.
@@ -106,59 +103,6 @@ class LocalStream:
         except Exception:
             return []
 
-    def _persist_api_key(self, key: str) -> None:
-        """Persist API key to environment and instance ``.env`` if possible.
-
-        Behavior:
-        - Always sets ``OPENAI_API_KEY`` in process env and in-memory config.
-        - Writes/updates ``<instance_path>/.env``:
-          * If ``.env`` exists, replaces/append OPENAI_API_KEY line.
-          * Else, copies template from ``<instance_path>/.env.example`` when present,
-            otherwise falls back to the packaged template
-            ``reachy_mini_conversation_app/.env.example``.
-          * Ensures the resulting file contains the full template plus the key.
-        - Loads the written ``.env`` into the current process environment.
-        """
-        k = (key or "").strip()
-        if not k:
-            return
-        # Update live process env and config so consumers see it immediately
-        try:
-            os.environ["OPENAI_API_KEY"] = k
-        except Exception:  # best-effort
-            pass
-        try:
-            config.OPENAI_API_KEY = k
-        except Exception:
-            pass
-
-        if not self._instance_path:
-            return
-        try:
-            inst = Path(self._instance_path)
-            env_path = inst / ".env"
-            lines = self._read_env_lines(env_path)
-            replaced = False
-            for i, ln in enumerate(lines):
-                if ln.strip().startswith("OPENAI_API_KEY="):
-                    lines[i] = f"OPENAI_API_KEY={k}"
-                    replaced = True
-                    break
-            if not replaced:
-                lines.append(f"OPENAI_API_KEY={k}")
-            final_text = "\n".join(lines) + "\n"
-            env_path.write_text(final_text, encoding="utf-8")
-            logger.info("Persisted OPENAI_API_KEY to %s", env_path)
-
-            # Load the newly written .env into this process to ensure downstream imports see it
-            try:
-                from dotenv import load_dotenv
-
-                load_dotenv(dotenv_path=str(env_path), override=True)
-            except Exception:
-                pass
-        except Exception as e:
-            logger.warning("Failed to persist OPENAI_API_KEY: %s", e)
 
     def _persist_personality(self, profile: Optional[str]) -> None:
         """Persist the startup personality to the instance .env and config."""
@@ -271,10 +215,7 @@ class LocalStream:
             except Exception:
                 pass
 
-        class ApiKeyPayload(BaseModel):
-            openai_api_key: str
-
-        # GET / -> index.html
+        # GET / -> index.html (local-backend status/landing page)
         @self._settings_app.get("/")
         def _root() -> FileResponse:
             return FileResponse(str(index_file))
@@ -283,12 +224,6 @@ class LocalStream:
         @self._settings_app.get("/favicon.ico")
         def _favicon() -> Response:
             return Response(status_code=204)
-
-        # GET /status -> whether key is set
-        @self._settings_app.get("/status")
-        def _status() -> JSONResponse:
-            has_key = bool(config.OPENAI_API_KEY and str(config.OPENAI_API_KEY).strip())
-            return JSONResponse({"has_key": has_key})
 
         # GET /ready -> whether backend finished loading tools
         @self._settings_app.get("/ready")
@@ -299,41 +234,6 @@ class LocalStream:
             except Exception:
                 ready = False
             return JSONResponse({"ready": ready})
-
-        # POST /openai_api_key -> set/persist key
-        @self._settings_app.post("/openai_api_key")
-        def _set_key(payload: ApiKeyPayload) -> JSONResponse:
-            key = (payload.openai_api_key or "").strip()
-            if not key:
-                return JSONResponse({"ok": False, "error": "empty_key"}, status_code=400)
-            self._persist_api_key(key)
-            return JSONResponse({"ok": True})
-
-        # POST /validate_api_key -> validate key without persisting it
-        @self._settings_app.post("/validate_api_key")
-        async def _validate_key(payload: ApiKeyPayload) -> JSONResponse:
-            key = (payload.openai_api_key or "").strip()
-            if not key:
-                return JSONResponse({"valid": False, "error": "empty_key"}, status_code=400)
-
-            # Try to validate by checking if we can fetch the models
-            try:
-                import httpx
-
-                headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.get("https://api.openai.com/v1/models", headers=headers)
-                    if response.status_code == 200:
-                        return JSONResponse({"valid": True})
-                    elif response.status_code == 401:
-                        return JSONResponse({"valid": False, "error": "invalid_api_key"}, status_code=401)
-                    else:
-                        return JSONResponse(
-                            {"valid": False, "error": "validation_failed"}, status_code=response.status_code
-                        )
-            except Exception as e:
-                logger.warning(f"API key validation failed: {e}")
-                return JSONResponse({"valid": False, "error": "validation_error"}, status_code=500)
 
         # ---------- MCP routes ----------
 
@@ -401,8 +301,8 @@ class LocalStream:
     def launch(self) -> None:
         """Start the recorder/player and run the async processing loops.
 
-        If the OpenAI key is missing, expose a tiny settings UI via the
-        Reachy Mini settings server to collect it before starting streams.
+        Loads the instance ``.env`` (profile / MCP / Ollama+Piper config) and,
+        when available, mounts the settings UI before starting the media streams.
         """
         self._stop_event.clear()
 
@@ -416,13 +316,7 @@ class LocalStream:
                 env_path = Path(self._instance_path) / ".env"
                 if env_path.exists():
                     load_dotenv(dotenv_path=str(env_path), override=True)
-                    # Update config with newly loaded values
-                    new_key = os.getenv("OPENAI_API_KEY", "").strip()
-                    if new_key:
-                        try:
-                            config.OPENAI_API_KEY = new_key
-                        except Exception:
-                            pass
+                    # Update config with newly loaded values (profile, MCP, Ollama/Piper)
                     if LOCKED_PROFILE is None:
                         new_profile = os.getenv("REACHY_MINI_CUSTOM_PROFILE")
                         if new_profile is not None:
@@ -433,37 +327,11 @@ class LocalStream:
             except Exception:
                 pass  # Instance .env loading is optional; continue with defaults
 
-        # If key is still missing, try to download one from HuggingFace
-        if not (config.OPENAI_API_KEY and str(config.OPENAI_API_KEY).strip()):
-            logger.info("OPENAI_API_KEY not set, attempting to download from HuggingFace...")
-            try:
-                from gradio_client import Client
-
-                client = Client("HuggingFaceM4/gradium_setup", verbose=False)
-                key, status = client.predict(api_name="/claim_b_key")
-                if key and key.strip():
-                    logger.info("Successfully downloaded API key from HuggingFace")
-                    # Persist it immediately
-                    self._persist_api_key(key)
-            except Exception as e:
-                logger.warning(f"Failed to download API key from HuggingFace: {e}")
-
-        # Always expose settings UI if a settings app is available
-        # (do this AFTER loading/downloading the key so status endpoint sees the right value)
+        # The local backend (Ollama + Piper) needs no API key. Still expose the
+        # settings UI (personality/MCP routes) when a settings app is available.
         self._init_settings_ui_if_needed()
 
-        # If key is still missing -> wait until provided via the settings UI
-        if not (config.OPENAI_API_KEY and str(config.OPENAI_API_KEY).strip()):
-            logger.warning("OPENAI_API_KEY not found. Open the app settings page to enter it.")
-            # Poll until the key becomes available (set via the settings UI)
-            try:
-                while not (config.OPENAI_API_KEY and str(config.OPENAI_API_KEY).strip()):
-                    time.sleep(0.2)
-            except KeyboardInterrupt:
-                logger.info("Interrupted while waiting for API key.")
-                return
-
-        # Start media after key is set/available
+        # Start media
         self._robot.media.start_recording()
         self._robot.media.start_playing()
         time.sleep(1)  # give some time to the pipelines to start
@@ -485,7 +353,7 @@ class LocalStream:
             except Exception:
                 pass
             self._tasks = [
-                asyncio.create_task(self.handler.start_up(), name="openai-handler"),
+                asyncio.create_task(self.handler.start_up(), name="ollama-handler"),
                 asyncio.create_task(self.record_loop(), name="stream-record-loop"),
                 asyncio.create_task(self.play_loop(), name="stream-play-loop"),
             ]
@@ -505,7 +373,7 @@ class LocalStream:
         This method:
         - Stops audio recording and playback first
         - Sets the stop event to signal async loops to terminate
-        - Cancels all pending async tasks (openai-handler, record-loop, play-loop)
+        - Cancels all pending async tasks (ollama-handler, record-loop, play-loop)
         """
         logger.info("Stopping LocalStream...")
 

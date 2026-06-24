@@ -15,19 +15,22 @@ dependencies = [
     "fastrtc>=0.0.34",
     "gradio==5.50.1.dev1",
     "huggingface-hub==1.3.0",
-    "opencv-python>=4.12.0.88",
+    "pillow",  # JPEG encode for the camera tool (cv2-free, robot-safe)
 
     #Environment variables
     "python-dotenv",
 
-    #OpenAI
-    "openai>=2.30.0",
+    #Local backend: Ollama (Gemma audio LLM/STT) + Piper TTS
+    "ollama>=0.4",
+    "piper-tts>=1.2",
+    "onnxruntime>=1.20",
+    "webrtcvad-wheels>=2.0.14",  # maintained fork; plain webrtcvad needs removed pkg_resources on py3.12
+    "soundfile>=0.12",
 
     #Reachy mini
     "reachy_mini_dances_library",
     "reachy_mini_toolbox",
     "reachy-mini>=1.6.0",
-    "gradio_client>=1.13.3",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +59,13 @@ all_vision = [
 mcp = [
   "fastmcp>=2.8",
 ]
+# Standalone "fake robot" voice runner (scripts/local_chat.py, outside src/ so it
+# never ships in the wheel): talk to the Ollama+Piper pipeline via the computer's
+# mic/speaker/webcam, no robot. Robot audio/camera go through `robot.media` instead.
+localdev = [
+  "sounddevice",
+  "opencv-python>=4.12.0.88",  # dev-only: --local-webcam fallback (NOT shipped to the robot)
+]
 
 [dependency-groups]
 dev = [
@@ -74,8 +84,9 @@ reachy-mini-conversation-app = "reachy_mini_conversation_app.main:main"
 [tool.uv]
 dependency-metadata = [
     # Upstream metadata currently marks `gstreamer-msvc-runtime` as unconditional.
-    # It should only be required on Windows. Temp fix.
-    { name = "gstreamer-libs", version = "1.28.1", requires-dist = ["gstreamer-msvc-runtime; sys_platform == 'win32'", "setuptools"] },
+    # It should only be required on Windows. Temp fix. Version unpinned so the
+    # override applies to any gstreamer-libs release (e.g. 1.28.2).
+    { name = "gstreamer-libs", requires-dist = ["gstreamer-msvc-runtime; sys_platform == 'win32'", "setuptools"] },
 ]
 
 [project.entry-points."reachy_mini_apps"]

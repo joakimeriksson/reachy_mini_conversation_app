@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional
 import gradio as gr
 from fastapi import FastAPI
 from fastrtc import Stream
-from gradio.utils import get_space
 
 from reachy_mini import ReachyMini, ReachyMiniApp
 from reachy_mini_conversation_app.utils import (
@@ -46,7 +45,7 @@ def run(
     # Putting these dependencies here makes the dashboard faster to load when the conversation app is installed
     from reachy_mini_conversation_app.moves import MovementManager
     from reachy_mini_conversation_app.console import LocalStream
-    from reachy_mini_conversation_app.openai_realtime import OpenaiRealtimeHandler
+    from reachy_mini_conversation_app.ollama_handler import OllamaConversationHandler
     from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
     from reachy_mini_conversation_app.audio.head_wobbler import HeadWobbler
 
@@ -134,17 +133,11 @@ def run(
     )
     logger.debug(f"Chatbot avatar images: {chatbot.avatar_images}")
 
-    handler = OpenaiRealtimeHandler(deps, gradio_mode=args.gradio, instance_path=instance_path)
+    handler = OllamaConversationHandler(deps, gradio_mode=args.gradio, instance_path=instance_path)
 
     stream_manager: gr.Blocks | LocalStream | None = None
 
     if args.gradio:
-        api_key_textbox = gr.Textbox(
-            label="OPENAI API Key",
-            type="password",
-            value=os.getenv("OPENAI_API_KEY") if not get_space() else "",
-        )
-
         from reachy_mini_conversation_app.gradio_mcp import McpUI
         from reachy_mini_conversation_app.gradio_personality import PersonalityUI
 
@@ -160,7 +153,6 @@ def run(
             modality="audio",
             additional_inputs=[
                 chatbot,
-                api_key_textbox,
                 *mcp_ui.additional_inputs_ordered(),
                 *personality_ui.additional_inputs_ordered(),
             ],

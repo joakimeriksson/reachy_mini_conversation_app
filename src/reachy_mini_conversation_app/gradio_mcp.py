@@ -75,14 +75,10 @@ class McpUI:
                     return "MCP servers disconnected. No servers configured."
 
                 # 4. Register tools from new config
+                # The Ollama chat loop reads the live tool registry on every turn,
+                # so newly registered MCP tools take effect without a session restart.
                 count = await register_mcp_tools()
-
-                # 5. Restart realtime session to push new tool specs to OpenAI
-                try:
-                    await handler._restart_session()
-                    return f"Connected! {count} MCP tool(s) registered. Session restarted."
-                except Exception as e:
-                    return f"Connected {count} MCP tool(s), but session restart failed: {e}"
+                return f"Connected! {count} MCP tool(s) registered."
 
             except Exception as e:
                 logger.error("MCP connect failed: %s", e)

@@ -41,22 +41,6 @@ def _resolve_default_profiles_directory() -> Path:
 
 DEFAULT_PROFILES_DIRECTORY = _resolve_default_profiles_directory()
 
-# Full list of voices supported by the OpenAI Realtime / TTS API.
-# Source: https://developers.openai.com/api/docs/guides/text-to-speech/#voice-options
-# "marin" and "cedar" are recommended for gpt-realtime.
-AVAILABLE_VOICES: list[str] = [
-    "alloy",
-    "ash",
-    "ballad",
-    "cedar",
-    "coral",
-    "echo",
-    "marin",
-    "sage",
-    "shimmer",
-    "verse",
-]
-
 logger = logging.getLogger(__name__)
 
 
@@ -78,6 +62,30 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
     logger.warning("Invalid boolean value for %s=%r, using default=%s", name, raw, default)
     return default
+
+
+def _env_int(name: str, default: int) -> int:
+    """Parse an integer env var, falling back to *default* on missing/invalid."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid int for %s=%r, using default=%s", name, raw, default)
+        return default
+
+
+def _env_opt_float(name: str) -> float | None:
+    """Parse an optional float env var; None when unset (use the library default)."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Invalid float for %s=%r, ignoring", name, raw)
+        return None
 
 
 def _collect_profile_names(profiles_root: Path) -> set[str]:
@@ -150,16 +158,12 @@ else:
 class Config:
     """Configuration class for the conversation app."""
 
-    # Required
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # The key is downloaded in console.py if needed
-
-    # Optional
-    MODEL_NAME = os.getenv("MODEL_NAME", "gpt-realtime")
+    # Optional (HuggingFace: robot emotion datasets + optional local vision model)
     HF_HOME = os.getenv("HF_HOME", "./cache")
     LOCAL_VISION_MODEL = os.getenv("LOCAL_VISION_MODEL", "HuggingFaceTB/SmolVLM2-2.2B-Instruct")
     HF_TOKEN = os.getenv("HF_TOKEN")  # Optional, falls back to hf auth login if not set
 
-    logger.debug(f"Model: {MODEL_NAME}, HF_HOME: {HF_HOME}, Vision Model: {LOCAL_VISION_MODEL}")
+    logger.debug(f"HF_HOME: {HF_HOME}, Vision Model: {LOCAL_VISION_MODEL}")
 
     # Filesystem root containing profile directories, not a Python import path.
     _profiles_directory_env = os.getenv("REACHY_MINI_EXTERNAL_PROFILES_DIRECTORY")
@@ -169,6 +173,42 @@ class Config:
     AUTOLOAD_EXTERNAL_TOOLS = _env_flag("AUTOLOAD_EXTERNAL_TOOLS", default=False)
     REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
     MCP_SERVER_URLS = os.getenv("MCP_SERVER_URLS")
+
+    # --- Local backend: Ollama (Gemma audio LLM/STT) + Piper TTS ---
+    # Base URL of the Ollama server. The native API lives at this root; the
+    # OpenAI-compatible chat API at "<url>/v1".
+    OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+    # Conversation model — must support tool calling (and, for direct audio STT,
+    # audio input). The tag is whatever the user has pulled locally.
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:latest")
+    # Model used for speech-to-text. Defaults to OLLAMA_MODEL (one audio-capable
+    # model for both). Override to use a separate STT model if desired.
+    OLLAMA_STT_MODEL = os.getenv("OLLAMA_STT_MODEL") or OLLAMA_MODEL
+    # Generation tuning (passed to Ollama via `options`).
+    OLLAMA_TEMPERATURE = _env_opt_float("OLLAMA_TEMPERATURE")  # None -> model default
+    OLLAMA_NUM_CTX = _env_int("OLLAMA_NUM_CTX", 0)  # 0 -> model default
+    # How long Ollama keeps the model loaded between calls (e.g. "5m", "-1" = forever).
+    OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
+    # Enable chain-of-thought "thinking" for the chat model (slower, sometimes better).
+    OLLAMA_THINK = _env_flag("OLLAMA_THINK", default=False)
+
+    # --- Piper TTS ---
+    # Voice (ONNX): a voice name resolvable in PIPER_DATA_DIR or an absolute .onnx
+    # path. Profiles may override via their voice.txt.
+    PIPER_VOICE = os.getenv("PIPER_VOICE", "en_US-lessac-medium")
+    PIPER_DATA_DIR = os.getenv("PIPER_DATA_DIR")  # dir holding downloaded Piper voices
+    # Synthesis tuning (None -> the voice's built-in default).
+    PIPER_LENGTH_SCALE = _env_opt_float("PIPER_LENGTH_SCALE")  # >1 slower, <1 faster
+    PIPER_NOISE_SCALE = _env_opt_float("PIPER_NOISE_SCALE")    # expressiveness
+    PIPER_NOISE_W_SCALE = _env_opt_float("PIPER_NOISE_W_SCALE")  # phoneme-length variation
+    PIPER_VOLUME = _env_opt_float("PIPER_VOLUME")             # 1.0 = unchanged
+    PIPER_SPEAKER_ID = _env_int("PIPER_SPEAKER_ID", -1)      # -1 -> default speaker
+
+    # VAD tuning (see audio/vad.py).
+    VAD_AGGRESSIVENESS = _env_int("VAD_AGGRESSIVENESS", 2)
+    VAD_SILENCE_MS = _env_int("VAD_SILENCE_MS", 800)
+    VAD_MIN_SPEECH_MS = _env_int("VAD_MIN_SPEECH_MS", 200)
+    VAD_MAX_UTTERANCE_MS = _env_int("VAD_MAX_UTTERANCE_MS", 15000)
 
     logger.debug(f"Custom Profile: {REACHY_MINI_CUSTOM_PROFILE}")
 

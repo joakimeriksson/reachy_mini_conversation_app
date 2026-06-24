@@ -29,10 +29,17 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
     )
     parser.add_argument("--no-camera", default=False, action="store_true", help="Disable camera usage")
     parser.add_argument(
+        "--local-webcam",
+        default=False,
+        action="store_true",
+        help="Dev only: use the local machine's webcam (OpenCV) when robot.media has no camera",
+    )
+    parser.add_argument("--webcam-index", type=int, default=0, help="OpenCV webcam device index")
+    parser.add_argument(
         "--local-vision",
         default=False,
         action="store_true",
-        help="Use local vision model instead of gpt-realtime vision",
+        help="Use a dedicated local vision model instead of the multimodal LLM for camera vision",
     )
     parser.add_argument("--gradio", default=False, action="store_true", help="Open gradio interface")
     parser.add_argument("--debug", default=False, action="store_true", help="Enable debug logging")
@@ -61,7 +68,8 @@ def initialize_camera_and_vision(
     head_tracker = None
     vision_processor: Optional[VisionProcessor] = None
 
-    if not args.no_camera:
+    local_webcam = getattr(args, "local_webcam", False)
+    if not args.no_camera or local_webcam:
         if args.head_tracker is not None:
             if args.head_tracker == "yolo":
                 from reachy_mini_conversation_app.vision.yolo_head_tracker import HeadTracker
@@ -72,7 +80,12 @@ def initialize_camera_and_vision(
 
                 head_tracker = HeadTracker()
 
-        camera_worker = CameraWorker(current_robot, head_tracker)
+        camera_worker = CameraWorker(
+            current_robot,
+            head_tracker,
+            local_webcam=local_webcam,
+            webcam_index=getattr(args, "webcam_index", 0),
+        )
 
         if args.local_vision:
             result = subprocess.run(
@@ -101,7 +114,8 @@ def initialize_camera_and_vision(
             vision_processor = initialize_vision_processor()
         else:
             logging.getLogger(__name__).info(
-                "Using gpt-realtime for vision (default). Use --local-vision for local processing.",
+                "No local vision model selected; camera vision relies on the multimodal LLM (Gemma). "
+                "Use --local-vision for a dedicated local vision model.",
             )
 
     return camera_worker, vision_processor
@@ -120,12 +134,16 @@ def setup_logger(debug: bool) -> logging.Logger:
     warnings.filterwarnings("ignore", message=".*AVCaptureDeviceTypeExternal.*")
     warnings.filterwarnings("ignore", category=UserWarning, module="aiortc")
 
+    # Quiet the per-frame "Camera is not initialized" spam when robot.media has
+    # no camera (e.g. desktop sim with the local webcam fallback).
+    logging.getLogger("reachy_mini.media.media_manager").setLevel(logging.ERROR)
+
     # Tame third-party noise (looser in DEBUG)
     if log_level == "DEBUG":
         logging.getLogger("aiortc").setLevel(logging.INFO)
         logging.getLogger("fastrtc").setLevel(logging.INFO)
         logging.getLogger("aioice").setLevel(logging.INFO)
-        logging.getLogger("openai").setLevel(logging.INFO)
+        logging.getLogger("httpx").setLevel(logging.INFO)
         logging.getLogger("websockets").setLevel(logging.INFO)
     else:
         logging.getLogger("aiortc").setLevel(logging.ERROR)

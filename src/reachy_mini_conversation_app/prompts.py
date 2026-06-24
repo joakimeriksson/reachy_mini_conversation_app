@@ -91,12 +91,14 @@ def get_session_instructions() -> str:
         sys.exit(1)
 
 
-def get_session_voice(default: str = "cedar") -> str:
-    """Resolve the voice to use for the session.
+def get_session_voice(default: str | None = None) -> str:
+    """Resolve the Piper voice to use for the session.
 
-    If a custom profile is selected and contains a voice.txt, return its
-    trimmed content; otherwise return the provided default ("cedar").
+    If a custom profile is selected and contains a ``voice.txt``, return its
+    trimmed content (a Piper voice name or .onnx path); otherwise fall back to
+    *default* or the configured ``PIPER_VOICE``.
     """
+    default = default or config.PIPER_VOICE
     profile = config.REACHY_MINI_CUSTOM_PROFILE
     if not profile:
         return default

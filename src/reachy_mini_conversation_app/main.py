@@ -120,6 +120,7 @@ def run(
         camera_worker=camera_worker,
         vision_processor=vision_processor,
         head_wobbler=head_wobbler,
+        instance_path=instance_path,
     )
     current_file_path = os.path.dirname(os.path.abspath(__file__))
     logger.debug(f"Current file absolute path: {current_file_path}")

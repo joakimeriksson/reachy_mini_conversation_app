@@ -66,6 +66,7 @@ class ToolDependencies:
     vision_processor: Any | None = None
     head_wobbler: Any | None = None  # HeadWobbler for audio-reactive motion
     motion_duration_s: float = 1.0
+    instance_path: str | Path | None = None  # app instance dir (long-term memory store)
 
 
 # Tool base class

@@ -94,7 +94,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
 
     async def start_up(self) -> None:
         """Build backends, register MCP tools, and run the conversation loop."""
-        instructions = get_session_instructions()
+        instructions = get_session_instructions(self.instance_path)
         self._stt = GemmaSTT(config.OLLAMA_STT_MODEL, config.OLLAMA_URL)
         self._chat = OllamaChat(config.OLLAMA_MODEL, config.OLLAMA_URL, self.deps, instructions)
         self._tts = make_tts()
@@ -226,7 +226,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         """Apply a new profile at runtime by swapping the chat system prompt."""
         try:
             set_custom_profile(profile)
-            instructions = get_session_instructions()
+            instructions = get_session_instructions(self.instance_path)
             self._voice = get_session_voice()
             if self._chat is not None:
                 self._chat.set_system_prompt(instructions)

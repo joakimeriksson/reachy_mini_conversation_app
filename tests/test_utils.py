@@ -7,7 +7,7 @@ from reachy_local_assistant.utils import initialize_camera_and_vision
 
 
 def _args(**kw) -> argparse.Namespace:
-    base = dict(no_camera=False, head_tracker=None, local_webcam=False, webcam_index=0)
+    base = {"no_camera": False, "head_tracker": None, "local_webcam": False, "webcam_index": 0}
     base.update(kw)
     return argparse.Namespace(**base)
 

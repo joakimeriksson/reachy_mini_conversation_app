@@ -19,9 +19,9 @@ Usage (same flags as the stock daemon):
 """
 
 from __future__ import annotations
-
-import logging
 import sys
+import logging
+
 
 logger = logging.getLogger("reachy_daemon_patched")
 

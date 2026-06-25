@@ -23,12 +23,12 @@ real app modules, so run it from the repo root. Requires the ``localdev`` extra
 """
 
 from __future__ import annotations
-
-import argparse
+import sys
 import asyncio
 import logging
-import sys
+import argparse
 from pathlib import Path
+
 
 # Make the in-repo package importable when run as a plain script from the repo root.
 _SRC = Path(__file__).resolve().parents[1] / "src"
@@ -39,10 +39,11 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.signal import resample
 
+from reachy_local_assistant.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT
 from reachy_local_assistant.audio.piper_tts import PiperTTS
-from reachy_local_assistant.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
+
 
 logger = logging.getLogger("local_chat")
 

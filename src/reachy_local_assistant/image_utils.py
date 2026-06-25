@@ -1,14 +1,14 @@
 """Image helpers with no OpenCV dependency (so the robot wheel stays cv2-free)."""
 
 from __future__ import annotations
-
 import io
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 
-def encode_jpeg(frame_bgr: NDArray, quality: int = 80) -> bytes:
+def encode_jpeg(frame_bgr: NDArray[Any], quality: int = 80) -> bytes:
     """Encode a BGR (OpenCV-convention) uint8 frame to JPEG bytes via Pillow.
 
     Camera frames from ``robot.media`` and ``cv2.VideoCapture`` are BGR; Pillow

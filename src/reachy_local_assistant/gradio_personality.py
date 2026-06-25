@@ -32,7 +32,7 @@ class PersonalityUI:
         self.person_name_tb: gr.Textbox
         self.person_instr_ta: gr.TextArea
         self.tools_txt_ta: gr.TextArea
-        self.voice_dropdown: gr.Dropdown
+        self.voice_dropdown: gr.Textbox
         self.new_personality_btn: gr.Button
         self.available_tools_cg: gr.CheckboxGroup
         self.save_btn: gr.Button

@@ -271,7 +271,7 @@ class LocalStream:
             if loop is None:
                 return JSONResponse({"error": "Event loop not ready"}, status_code=503)
 
-            async def _do_connect() -> dict:
+            async def _do_connect() -> dict[str, object]:
                 await shutdown_mcp()
                 count = await register_mcp_tools()
                 try:

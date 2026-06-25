@@ -250,7 +250,7 @@ def mount_personality_routes(
         async def _do_apply() -> str:
             sel = None if sel_name == DEFAULT_OPTION else sel_name
             status = await handler.apply_personality(sel)
-            return status
+            return str(status)
 
         try:
             logger.info("Headless apply: requested name=%r", sel_name)

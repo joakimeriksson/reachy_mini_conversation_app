@@ -80,7 +80,7 @@ async def _fetch_token(server: McpServerConfig) -> str:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(auth_url, json={"api_key": server.api_key})
             resp.raise_for_status()
-            token = resp.json()["token"]
+            token = str(resp.json()["token"])
             logger.info("Successfully obtained MCP token from %s", auth_url)
             return token
     except Exception as exc:

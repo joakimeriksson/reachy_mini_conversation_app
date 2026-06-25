@@ -6,9 +6,9 @@ To keep this a fast unit test (and runnable without the SDK), we inject a fake
 each test, so the real module is untouched for the rest of the suite.
 """
 
-import importlib
 import sys
 import types
+import importlib
 
 import pytest
 

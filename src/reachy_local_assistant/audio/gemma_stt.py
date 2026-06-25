@@ -10,15 +10,15 @@ off the audio thread.
 """
 
 from __future__ import annotations
-
 import io
+import re
 import json
 import logging
-import re
 from typing import Tuple
 
 import numpy as np
 from numpy.typing import NDArray
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class GemmaSTT:
     """Native-audio speech-to-text via a multimodal Gemma model on Ollama."""
 
     def __init__(self, model: str, host: str, sample_rate: int = 16000) -> None:
+        """Build the async Ollama client for the STT model."""
         import ollama  # imported lazily so the dep is only needed for this backend
 
         self._model = model

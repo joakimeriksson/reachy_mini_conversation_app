@@ -124,6 +124,10 @@ ignore = [
   "D213",  # summary on second line (conflicts with D212)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]            # docstrings on every test/helper are noise
+"scripts/**" = ["D", "E402"]  # dev scripts; sys.path bootstrap precedes imports
+
 [tool.ruff.lint.isort]
 length-sort = true
 lines-after-imports = 2

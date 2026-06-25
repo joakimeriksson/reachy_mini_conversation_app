@@ -10,13 +10,13 @@ concerns and resampling to 16 kHz before calling :meth:`VadSegmenter.feed`.
 """
 
 from __future__ import annotations
-
 import logging
+from typing import List, Deque
 from collections import deque
-from typing import Deque, List
 
 import numpy as np
 from numpy.typing import NDArray
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ class VadSegmenter:
         max_utterance_ms: int = 15000,
         preroll_ms: int = 300,
     ) -> None:
+        """Initialise the WebRTC VAD with the given thresholds."""
         try:
             import webrtcvad  # noqa: F401
         except ImportError as exc:  # pragma: no cover - exercised only without dep
@@ -57,7 +58,7 @@ class VadSegmenter:
         self._preroll_frames = max(0, preroll_ms // FRAME_MS)
 
         # Pending samples not yet aligned to a full 20 ms frame.
-        self._tail = np.empty(0, dtype=np.int16)
+        self._tail: NDArray[np.int16] = np.empty(0, dtype=np.int16)
         # Ring buffer of recent frames used as pre-roll before speech starts.
         self._preroll: Deque[NDArray[np.int16]] = deque(maxlen=self._preroll_frames or 1)
 

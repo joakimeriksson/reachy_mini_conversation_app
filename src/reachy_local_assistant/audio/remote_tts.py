@@ -9,13 +9,13 @@ Same interface as :class:`audio.piper_tts.PiperTTS`:
 """
 
 from __future__ import annotations
-
 import io
 import logging
-from typing import Iterator, Optional, Tuple
+from typing import Tuple, Iterator, Optional
 
 import numpy as np
 from numpy.typing import NDArray
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ class RemoteTTS:
         api_key: Optional[str] = None,
         timeout: float = 30.0,
     ) -> None:
+        """Configure the remote /v1/audio/speech endpoint."""
         if not url:
             raise ValueError("RemoteTTS requires a TTS_URL (the /v1/audio/speech endpoint)")
         self._url = url

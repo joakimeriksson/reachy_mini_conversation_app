@@ -11,14 +11,12 @@ between turns without losing context.
 """
 
 from __future__ import annotations
-
 import json
 import logging
-from typing import Any, Dict, List
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from reachy_local_assistant.config import config
+
 
 if TYPE_CHECKING:
     from reachy_local_assistant.tools.core_tools import ToolDependencies
@@ -59,6 +57,7 @@ class OllamaChat:
         system_prompt: str,
         enable_tools: bool = True,
     ) -> None:
+        """Start a chat session against the given Ollama model."""
         import ollama  # lazy import: only needed for the local backend
 
         self._client = ollama.AsyncClient(host=host)
@@ -152,7 +151,7 @@ class OllamaChat:
         args_json = args if isinstance(args, str) else json.dumps(args or {})
 
         logger.info("LLM tool call: %s(%s)", name, args_json)
-        result = await dispatch_tool_call(name, args_json, self._deps)
+        result = await dispatch_tool_call(name, args_json, self._deps)  # type: ignore[arg-type]
 
         # If a tool returned an image (e.g. the camera), don't dump the base64 as
         # text — attach it so the multimodal model can actually see it next turn.

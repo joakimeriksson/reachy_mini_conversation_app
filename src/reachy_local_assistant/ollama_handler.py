@@ -16,25 +16,25 @@ adds AEC + barge-in (see ``audio/aec.py``).
 """
 
 from __future__ import annotations
-
-import asyncio
 import base64
+import asyncio
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any, Tuple, Optional
 
 import numpy as np
-from numpy.typing import NDArray
 from fastrtc import AdditionalOutputs, AsyncStreamHandler, wait_for_item
+from numpy.typing import NDArray
 from scipy.signal import resample
 
-from reachy_local_assistant.audio.gemma_stt import GemmaSTT
+from reachy_local_assistant.config import config, set_custom_profile
+from reachy_local_assistant.prompts import get_session_voice, get_session_instructions
 from reachy_local_assistant.audio.tts import make_tts
 from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
-from reachy_local_assistant.config import config, set_custom_profile
+from reachy_local_assistant.mcp_client import shutdown_mcp, register_mcp_tools
+from reachy_local_assistant.audio.gemma_stt import GemmaSTT
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
-from reachy_local_assistant.mcp_client import register_mcp_tools, shutdown_mcp
-from reachy_local_assistant.prompts import get_session_instructions, get_session_voice
 from reachy_local_assistant.tools.core_tools import ToolDependencies
+
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         gradio_mode: bool = False,
         instance_path: Optional[str] = None,
     ) -> None:
+        """Initialise the handler with its tool dependencies."""
         super().__init__(
             expected_layout="mono",
             output_sample_rate=WOBBLER_SAMPLE_RATE,
@@ -205,7 +206,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
 
     async def emit(self) -> Tuple[int, NDArray[np.int16]] | AdditionalOutputs | None:
         """Return the next output item (audio chunk or transcript)."""
-        return await wait_for_item(self.output_queue)
+        return await wait_for_item(self.output_queue)  # type: ignore[no-any-return]
 
     async def shutdown(self) -> None:
         """Stop the loop and disconnect MCP clients."""
@@ -255,7 +256,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         return audio.reshape(-1)
 
     @staticmethod
-    def _resample_int16(audio: NDArray, src_rate: int, dst_rate: int) -> NDArray[np.int16]:
+    def _resample_int16(audio: NDArray[Any], src_rate: int, dst_rate: int) -> NDArray[np.int16]:
         audio = np.asarray(audio)
         if audio.dtype != np.int16:
             if np.issubdtype(audio.dtype, np.floating):
@@ -268,4 +269,4 @@ class OllamaConversationHandler(AsyncStreamHandler):
         if n <= 0:
             return np.empty(0, dtype=np.int16)
         resampled = resample(audio.astype(np.float32), n)
-        return np.clip(resampled, -32768, 32767).astype(np.int16)
+        return np.clip(resampled, -32768, 32767).astype(np.int16)  # type: ignore[no-any-return]

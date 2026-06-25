@@ -2,8 +2,8 @@ import base64
 import logging
 from typing import Any, Dict
 
-from reachy_mini_conversation_app.image_utils import encode_jpeg
-from reachy_mini_conversation_app.tools.core_tools import Tool, ToolDependencies
+from reachy_local_assistant.image_utils import encode_jpeg
+from reachy_local_assistant.tools.core_tools import Tool, ToolDependencies
 
 
 logger = logging.getLogger(__name__)

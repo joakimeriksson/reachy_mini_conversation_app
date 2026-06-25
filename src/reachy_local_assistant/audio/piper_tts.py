@@ -52,7 +52,7 @@ class PiperTTS:
     @staticmethod
     def _synthesis_config() -> "object | None":
         """Build a Piper SynthesisConfig from config (None fields use voice defaults)."""
-        from reachy_mini_conversation_app.config import config
+        from reachy_local_assistant.config import config
 
         from piper import SynthesisConfig
 

@@ -58,6 +58,6 @@ cache/
 .nfs*
 
 # User-created personalities (managed by UI)
-src/reachy_mini_conversation_app/profiles/user_personalities/
+src/reachy_local_assistant/profiles/user_personalities/
 piper_voices/
 .venv-local/

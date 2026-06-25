@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastrtc import Stream
 
 from reachy_mini import ReachyMini, ReachyMiniApp
-from reachy_mini_conversation_app.utils import (
+from reachy_local_assistant.utils import (
     parse_args,
     setup_logger,
     initialize_camera_and_vision,
@@ -42,17 +42,17 @@ def run(
 ) -> None:
     """Run the Reachy Mini conversation app."""
     # Putting these dependencies here makes the dashboard faster to load when the conversation app is installed
-    from reachy_mini_conversation_app.moves import MovementManager
-    from reachy_mini_conversation_app.console import LocalStream
-    from reachy_mini_conversation_app.ollama_handler import OllamaConversationHandler
-    from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
-    from reachy_mini_conversation_app.audio.head_wobbler import HeadWobbler
+    from reachy_local_assistant.moves import MovementManager
+    from reachy_local_assistant.console import LocalStream
+    from reachy_local_assistant.ollama_handler import OllamaConversationHandler
+    from reachy_local_assistant.tools.core_tools import ToolDependencies
+    from reachy_local_assistant.audio.head_wobbler import HeadWobbler
 
     logger = setup_logger(args.debug)
     logger.info("Starting Reachy Mini Conversation App")
 
     if hasattr(args, "mcp_servers") and args.mcp_servers:
-        from reachy_mini_conversation_app.config import config
+        from reachy_local_assistant.config import config
 
         os.environ["MCP_SERVER_URLS"] = args.mcp_servers
         config.MCP_SERVER_URLS = args.mcp_servers
@@ -133,8 +133,8 @@ def run(
     stream_manager: gr.Blocks | LocalStream | None = None
 
     if args.gradio:
-        from reachy_mini_conversation_app.gradio_mcp import McpUI
-        from reachy_mini_conversation_app.gradio_personality import PersonalityUI
+        from reachy_local_assistant.gradio_mcp import McpUI
+        from reachy_local_assistant.gradio_personality import PersonalityUI
 
         mcp_ui = McpUI()
         mcp_ui.create_components()
@@ -216,7 +216,7 @@ def run(
         logger.info("Shutdown complete.")
 
 
-class ReachyMiniConversationApp(ReachyMiniApp):  # type: ignore[misc]
+class ReachyLocalAssistant(ReachyMiniApp):  # type: ignore[misc]
     """Reachy Mini Apps entry point for the conversation app."""
 
     custom_app_url = "http://0.0.0.0:7860/"
@@ -243,7 +243,7 @@ class ReachyMiniConversationApp(ReachyMiniApp):  # type: ignore[misc]
 
 
 if __name__ == "__main__":
-    app = ReachyMiniConversationApp()
+    app = ReachyLocalAssistant()
     try:
         app.wrapped_run()
     except KeyboardInterrupt:

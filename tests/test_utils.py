@@ -3,7 +3,7 @@
 import argparse
 from unittest.mock import MagicMock, patch
 
-from reachy_mini_conversation_app.utils import initialize_camera_and_vision
+from reachy_local_assistant.utils import initialize_camera_and_vision
 
 
 def _args(**kw) -> argparse.Namespace:
@@ -17,14 +17,14 @@ def test_no_camera_returns_none() -> None:
 
 
 def test_camera_enabled_creates_worker() -> None:
-    with patch("reachy_mini_conversation_app.utils.CameraWorker") as mock_cw:
+    with patch("reachy_local_assistant.utils.CameraWorker") as mock_cw:
         result = initialize_camera_and_vision(_args(no_camera=False), MagicMock())
     mock_cw.assert_called_once()
     assert result is mock_cw.return_value
 
 
 def test_local_webcam_creates_worker_even_without_robot_camera() -> None:
-    with patch("reachy_mini_conversation_app.utils.CameraWorker") as mock_cw:
+    with patch("reachy_local_assistant.utils.CameraWorker") as mock_cw:
         result = initialize_camera_and_vision(_args(no_camera=True, local_webcam=True), MagicMock())
     mock_cw.assert_called_once()
     assert result is mock_cw.return_value

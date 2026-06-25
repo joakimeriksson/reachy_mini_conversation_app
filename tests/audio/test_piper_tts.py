@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from reachy_mini_conversation_app.audio.piper_tts import PiperTTS
+from reachy_local_assistant.audio.piper_tts import PiperTTS
 
 
 class _IntChunk:

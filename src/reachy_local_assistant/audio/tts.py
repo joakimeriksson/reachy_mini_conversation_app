@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 def make_tts() -> Any:
     """Construct the configured TTS backend (``piper`` or ``remote``)."""
-    from reachy_mini_conversation_app.config import config
+    from reachy_local_assistant.config import config
 
     if config.TTS_BACKEND == "remote":
-        from reachy_mini_conversation_app.audio.remote_tts import RemoteTTS
+        from reachy_local_assistant.audio.remote_tts import RemoteTTS
 
         logger.info(
             "TTS backend: remote (%s, model=%s, voice=%s)",
@@ -32,7 +32,7 @@ def make_tts() -> Any:
             api_key=config.TTS_API_KEY,
         )
 
-    from reachy_mini_conversation_app.audio.piper_tts import PiperTTS
+    from reachy_local_assistant.audio.piper_tts import PiperTTS
 
     logger.info("TTS backend: piper (voice=%s)", config.PIPER_VOICE)
     return PiperTTS(config.PIPER_VOICE, config.PIPER_DATA_DIR)

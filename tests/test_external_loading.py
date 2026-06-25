@@ -5,20 +5,20 @@ from pathlib import Path
 
 import pytest
 
-import reachy_mini_conversation_app.config as config_mod
+import reachy_local_assistant.config as config_mod
 
 
 def _reload_core_tools() -> ModuleType:
     """Reload core_tools after config object has been patched."""
     for module_name in list(sys.modules):
-        if module_name.startswith("reachy_mini_conversation_app.tools."):
+        if module_name.startswith("reachy_local_assistant.tools."):
             sys.modules.pop(module_name, None)
     # External file-loaded modules are registered by bare tool name.
     sys.modules.pop("ext_ping", None)
     sys.modules.pop("sweep_look", None)
 
-    sys.modules.pop("reachy_mini_conversation_app.tools.core_tools", None)
-    core_tools_mod = importlib.import_module("reachy_mini_conversation_app.tools.core_tools")
+    sys.modules.pop("reachy_local_assistant.tools.core_tools", None)
+    core_tools_mod = importlib.import_module("reachy_local_assistant.tools.core_tools")
     return core_tools_mod
 
 
@@ -53,7 +53,7 @@ def test_external_tools_can_be_loaded_without_external_profile(
         "\n".join(
             [
                 "from typing import Any, Dict",
-                "from reachy_mini_conversation_app.tools.core_tools import Tool, ToolDependencies",
+                "from reachy_local_assistant.tools.core_tools import Tool, ToolDependencies",
                 "",
                 "class ExtPingTool(Tool):",
                 '    name = "ext_ping"',

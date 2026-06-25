@@ -13,7 +13,7 @@ import logging
 import dataclasses
 from typing import Any, Dict, List
 
-from reachy_mini_conversation_app.config import config
+from reachy_local_assistant.config import config
 
 
 logger = logging.getLogger(__name__)
@@ -185,7 +185,7 @@ class McpClientManager:
             )
             return 0
 
-        from reachy_mini_conversation_app.tools.core_tools import ALL_TOOLS, ALL_TOOL_SPECS
+        from reachy_local_assistant.tools.core_tools import ALL_TOOLS, ALL_TOOL_SPECS
 
         total = 0
         for server in servers:
@@ -218,7 +218,7 @@ class McpClientManager:
 
     async def shutdown(self) -> None:
         """Disconnect all MCP clients and remove their tools from the registry."""
-        from reachy_mini_conversation_app.tools.core_tools import ALL_TOOLS, ALL_TOOL_SPECS
+        from reachy_local_assistant.tools.core_tools import ALL_TOOLS, ALL_TOOL_SPECS
 
         for name in self._tool_names:
             ALL_TOOLS.pop(name, None)

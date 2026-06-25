@@ -3,8 +3,8 @@ import sys
 import logging
 from pathlib import Path
 
-from reachy_mini_conversation_app.config import DEFAULT_PROFILES_DIRECTORY, config
-from reachy_mini_conversation_app.memory import format_memory_for_prompt
+from reachy_local_assistant.config import DEFAULT_PROFILES_DIRECTORY, config
+from reachy_local_assistant.memory import format_memory_for_prompt
 
 
 logger = logging.getLogger(__name__)

@@ -4,7 +4,7 @@ import logging
 import unicodedata
 from typing import TYPE_CHECKING, Any, Dict
 
-from reachy_mini_conversation_app.tools.core_tools import Tool, ToolDependencies
+from reachy_local_assistant.tools.core_tools import Tool, ToolDependencies
 
 
 if TYPE_CHECKING:
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from reachy_mini.motion.recorded_move import RecordedMoves
-    from reachy_mini_conversation_app.dance_emotion_moves import EmotionQueueMove
+    from reachy_local_assistant.dance_emotion_moves import EmotionQueueMove
 
     EMOTION_AVAILABLE = True
 except Exception as e:

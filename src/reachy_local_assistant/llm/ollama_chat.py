@@ -18,10 +18,10 @@ from typing import Any, Dict, List
 
 from typing import TYPE_CHECKING
 
-from reachy_mini_conversation_app.config import config
+from reachy_local_assistant.config import config
 
 if TYPE_CHECKING:
-    from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+    from reachy_local_assistant.tools.core_tools import ToolDependencies
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class OllamaChat:
     def _get_tool_specs() -> List[Dict[str, Any]]:
         """Fetch tool specs lazily; degrade to none if the registry is unavailable."""
         try:
-            from reachy_mini_conversation_app.tools.core_tools import get_tool_specs
+            from reachy_local_assistant.tools.core_tools import get_tool_specs
 
             return get_tool_specs()
         except Exception as exc:  # robot SDK / registry not importable (e.g. standalone runner)
@@ -143,7 +143,7 @@ class OllamaChat:
             return []
 
     async def _run_tool_call(self, call: Dict[str, Any]) -> None:
-        from reachy_mini_conversation_app.tools.core_tools import dispatch_tool_call
+        from reachy_local_assistant.tools.core_tools import dispatch_tool_call
 
         fn = call.get("function", {}) or {}
         name = fn.get("name", "")

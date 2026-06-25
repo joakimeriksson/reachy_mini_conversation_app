@@ -19,9 +19,9 @@ from scipy.signal import resample
 
 from reachy_mini import ReachyMini
 from reachy_mini.media.media_manager import MediaBackend
-from reachy_mini_conversation_app.config import LOCKED_PROFILE, config
-from reachy_mini_conversation_app.ollama_handler import OllamaConversationHandler
-from reachy_mini_conversation_app.headless_personality_ui import mount_personality_routes
+from reachy_local_assistant.config import LOCKED_PROFILE, config
+from reachy_local_assistant.ollama_handler import OllamaConversationHandler
+from reachy_local_assistant.headless_personality_ui import mount_personality_routes
 
 
 try:
@@ -110,7 +110,7 @@ class LocalStream:
             return
         selection = (profile or "").strip() or None
         try:
-            from reachy_mini_conversation_app.config import set_custom_profile
+            from reachy_local_assistant.config import set_custom_profile
 
             set_custom_profile(selection)
         except Exception:
@@ -229,7 +229,7 @@ class LocalStream:
         @self._settings_app.get("/ready")
         def _ready() -> JSONResponse:
             try:
-                mod = sys.modules.get("reachy_mini_conversation_app.tools.core_tools")
+                mod = sys.modules.get("reachy_local_assistant.tools.core_tools")
                 ready = bool(getattr(mod, "_TOOLS_INITIALIZED", False)) if mod else False
             except Exception:
                 ready = False
@@ -240,7 +240,7 @@ class LocalStream:
         @self._settings_app.get("/mcp/status")
         def _mcp_status() -> JSONResponse:
             servers = getattr(config, "MCP_SERVER_URLS", None) or ""
-            from reachy_mini_conversation_app.mcp_client import _manager
+            from reachy_local_assistant.mcp_client import _manager
 
             tool_count = len(_manager._tool_names) if _manager is not None else 0
             return JSONResponse({"servers": servers, "tool_count": tool_count})
@@ -250,7 +250,7 @@ class LocalStream:
 
         @self._settings_app.post("/mcp/connect")
         def _mcp_connect(payload: McpConnectPayload) -> JSONResponse:
-            from reachy_mini_conversation_app.mcp_client import shutdown_mcp, register_mcp_tools
+            from reachy_local_assistant.mcp_client import shutdown_mcp, register_mcp_tools
 
             raw = payload.servers.strip()
             csv_value = ",".join(line.strip() for line in raw.splitlines() if line.strip())
@@ -311,7 +311,7 @@ class LocalStream:
             try:
                 from dotenv import load_dotenv
 
-                from reachy_mini_conversation_app.config import set_custom_profile
+                from reachy_local_assistant.config import set_custom_profile
 
                 env_path = Path(self._instance_path) / ".env"
                 if env_path.exists():

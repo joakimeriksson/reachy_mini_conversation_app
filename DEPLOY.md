@@ -65,7 +65,7 @@ REACHY_MINI_CUSTOM_PROFILE="default"        # your personality
 ## 4. Run the app (on the Mac)
 
 ```bash
-uv run reachy-mini-conversation-app
+uv run reachy-local-assistant
 #   add --robot-name <name> if the daemon was started with one
 ```
 

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from reachy_mini_conversation_app.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
+from reachy_local_assistant.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
 
 
 def _silence(seconds: float) -> np.ndarray:

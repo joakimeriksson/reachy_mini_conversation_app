@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from reachy_mini_conversation_app.audio.gemma_stt import GemmaSTT
+from reachy_local_assistant.audio.gemma_stt import GemmaSTT
 
 
 def test_parse_strict_json():

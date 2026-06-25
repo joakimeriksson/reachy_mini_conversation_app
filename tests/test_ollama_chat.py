@@ -21,7 +21,7 @@ def chat_mod(monkeypatch):
         calls.append((name, args_json, deps))
         return {"ok": True, "tool": name}
 
-    fake = types.ModuleType("reachy_mini_conversation_app.tools.core_tools")
+    fake = types.ModuleType("reachy_local_assistant.tools.core_tools")
     fake.ToolDependencies = object
     fake.dispatch_tool_call = fake_dispatch
     fake.get_tool_specs = lambda exclusion_list=[]: [
@@ -38,11 +38,11 @@ def chat_mod(monkeypatch):
     ]
     fake._calls = calls
 
-    monkeypatch.setitem(sys.modules, "reachy_mini_conversation_app.tools.core_tools", fake)
-    monkeypatch.delitem(sys.modules, "reachy_mini_conversation_app.llm.ollama_chat", raising=False)
-    mod = importlib.import_module("reachy_mini_conversation_app.llm.ollama_chat")
+    monkeypatch.setitem(sys.modules, "reachy_local_assistant.tools.core_tools", fake)
+    monkeypatch.delitem(sys.modules, "reachy_local_assistant.llm.ollama_chat", raising=False)
+    mod = importlib.import_module("reachy_local_assistant.llm.ollama_chat")
     yield mod, fake
-    monkeypatch.delitem(sys.modules, "reachy_mini_conversation_app.llm.ollama_chat", raising=False)
+    monkeypatch.delitem(sys.modules, "reachy_local_assistant.llm.ollama_chat", raising=False)
 
 
 class FakeOllamaClient:

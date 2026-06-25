@@ -54,7 +54,7 @@ class GemmaSTT:
         """
         wav_bytes = self._to_wav_bytes(audio)
         try:
-            from reachy_mini_conversation_app.config import config
+            from reachy_local_assistant.config import config
 
             response = await self._client.chat(
                 model=self._model,

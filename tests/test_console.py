@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from reachy_mini.media.media_manager import MediaBackend
-from reachy_mini_conversation_app.console import LocalStream
+from reachy_local_assistant.console import LocalStream
 
 
 def test_clear_audio_queue_prefers_clear_player_when_available() -> None:

@@ -11,8 +11,8 @@ We welcome all contributions: bug fixes, new features, documentation, testing, a
 
 1. Fork and clone the repo:
    ```bash
-   git clone https://github.com/pollen-robotics/reachy_mini_conversation_app
-   cd reachy_mini_conversation_app
+   git clone https://github.com/pollen-robotics/reachy_local_assistant
+   cd reachy_local_assistant
    ```
 2. Follow the [README installation guide](README.md#installation) to set up dependencies and `.env`.
 3. Run the contributor checks after your changes:
@@ -35,7 +35,7 @@ We welcome all contributions: bug fixes, new features, documentation, testing, a
 
 This project is mirrored to a Hugging Face Space.
 
-- Every push to the `main` branch is automatically synchronized to [pollen-robotics/reachy_mini_conversation_app](https://huggingface.co/spaces/pollen-robotics/reachy_mini_conversation_app)
+- Every push to the `main` branch is automatically synchronized to [pollen-robotics/reachy_local_assistant](https://huggingface.co/spaces/pollen-robotics/reachy_local_assistant)
 - This sync is handled by a GitHub Action and requires no manual steps.
 - Contributors do not need to interact with the Space on Hugging Face hub directly.
 

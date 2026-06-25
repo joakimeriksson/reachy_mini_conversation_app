@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from reachy_mini_conversation_app.audio.remote_tts import RemoteTTS
+from reachy_local_assistant.audio.remote_tts import RemoteTTS
 
 
 def _wav_bytes(samples: np.ndarray, sr: int = 22050) -> bytes:

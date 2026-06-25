@@ -13,15 +13,15 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from reachy_mini import ReachyMini
-from reachy_mini_conversation_app.config import DEFAULT_PROFILES_DIRECTORY as DEFAULT_PROFILES_PATH  # noqa: F401
+from reachy_local_assistant.config import DEFAULT_PROFILES_DIRECTORY as DEFAULT_PROFILES_PATH  # noqa: F401
 
 # Import config to ensure .env is loaded before reading REACHY_MINI_CUSTOM_PROFILE
-from reachy_mini_conversation_app.config import config  # noqa: F401
-from reachy_mini_conversation_app.tools.tool_constants import SystemTool
+from reachy_local_assistant.config import config  # noqa: F401
+from reachy_local_assistant.tools.tool_constants import SystemTool
 
 
 if TYPE_CHECKING:
-    from reachy_mini_conversation_app.tools.background_tool_manager import BackgroundToolManager
+    from reachy_local_assistant.tools.background_tool_manager import BackgroundToolManager
 
 
 logger = logging.getLogger(__name__)
@@ -241,7 +241,7 @@ def _load_profile_tools() -> None:
 
         # Try tools directory if not found in profile
         if not loaded:
-            shared_module_path = f"reachy_mini_conversation_app.tools.{tool_name}"
+            shared_module_path = f"reachy_local_assistant.tools.{tool_name}"
             try:
                 source = _try_load_tool(
                     tool_name,

@@ -1,5 +1,5 @@
 ---
-title: Reachy Mini Conversation App
+title: Reachy Local Assistant
 emoji: 🎤
 colorFrom: red
 colorTo: blue
@@ -12,7 +12,7 @@ tags:
  - reachy_mini_python_app
 ---
 
-# Reachy Mini conversation app (local / on-prem)
+# Reachy Local Assistant (local / on-prem)
 
 A **fully local** conversational app for the Reachy Mini robot: speech, reasoning,
 and vision run on **Ollama (Gemma)** and the voice on **Piper** — no cloud, no API
@@ -115,7 +115,7 @@ See `.env.example` for the fully annotated list.
 ## Running the app
 
 ```bash
-reachy-mini-conversation-app
+reachy-local-assistant
 ```
 On a real robot the app auto-selects **console mode** (audio/camera through the
 robot). In **simulation** it auto-enables a Gradio web UI at http://localhost:7860.
@@ -170,17 +170,17 @@ Set `REACHY_MINI_CUSTOM_PROFILE=<name>` to load `profiles/<name>/`. If unset, th
 `default` profile is used. Each profile includes `instructions.txt` (prompt) and
 recommended `tools.txt` (allowed tools); an optional `voice.txt` selects the Piper
 voice. Profiles may include custom tool implementations (Python files subclassing
-`reachy_mini_conversation_app.tools.core_tools.Tool`; see `profiles/example/`).
+`reachy_local_assistant.tools.core_tools.Tool`; see `profiles/example/`).
 
 Reuse shared prompt fragments via `[name]` placeholders, which pull matching files
-under `src/reachy_mini_conversation_app/prompts/` (nested paths allowed).
+under `src/reachy_local_assistant/prompts/` (nested paths allowed).
 
 </details>
 
 <details>
 <summary><b>Locked profile mode</b></summary>
 
-Set `LOCKED_PROFILE` in `src/reachy_mini_conversation_app/config.py` to pin the app
+Set `LOCKED_PROFILE` in `src/reachy_local_assistant/config.py` to pin the app
 to one profile and disable switching — useful for fixed-personality clones.
 
 </details>
@@ -200,7 +200,7 @@ external tools directory are auto-registered. An external profile with no
 <summary><b>Multiple robots on the same subnet</b></summary>
 
 ```bash
-reachy-mini-conversation-app --robot-name <name>
+reachy-local-assistant --robot-name <name>
 ```
 `<name>` must match the daemon's `--robot-name`.
 

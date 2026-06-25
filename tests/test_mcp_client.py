@@ -1,6 +1,6 @@
 """Tests for MCP client configuration parsing."""
 
-from reachy_mini_conversation_app.mcp_client import McpServerConfig, _parse_mcp_servers
+from reachy_local_assistant.mcp_client import McpServerConfig, _parse_mcp_servers
 
 
 class TestParseMcpServers:

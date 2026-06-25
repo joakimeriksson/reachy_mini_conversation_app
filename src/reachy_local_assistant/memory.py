@@ -53,7 +53,7 @@ def memory_path_for_instance(instance_path: str | Path | None = None) -> Path:
 
     data_home = os.getenv("XDG_DATA_HOME")
     data_root = Path(data_home).expanduser() if data_home else Path.home() / ".local" / "share"
-    return data_root / "reachy_mini_conversation_app" / MEMORY_FILENAME
+    return data_root / "reachy_local_assistant" / MEMORY_FILENAME
 
 
 def normalize_memory_text(text: str) -> str:

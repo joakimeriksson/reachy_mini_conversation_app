@@ -39,10 +39,10 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.signal import resample
 
-from reachy_mini_conversation_app.audio.gemma_stt import GemmaSTT
-from reachy_mini_conversation_app.audio.piper_tts import PiperTTS
-from reachy_mini_conversation_app.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
-from reachy_mini_conversation_app.llm.ollama_chat import OllamaChat
+from reachy_local_assistant.audio.gemma_stt import GemmaSTT
+from reachy_local_assistant.audio.piper_tts import PiperTTS
+from reachy_local_assistant.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
+from reachy_local_assistant.llm.ollama_chat import OllamaChat
 
 logger = logging.getLogger("local_chat")
 
@@ -270,8 +270,8 @@ class LocalVoiceChat:
 def _load_system_prompt(profile: str | None) -> str:
     """Use the app's profile instructions if available, else a built-in prompt."""
     try:
-        from reachy_mini_conversation_app.config import set_custom_profile
-        from reachy_mini_conversation_app.prompts import get_session_instructions
+        from reachy_local_assistant.config import set_custom_profile
+        from reachy_local_assistant.prompts import get_session_instructions
 
         if profile:
             set_custom_profile(profile)
@@ -282,7 +282,7 @@ def _load_system_prompt(profile: str | None) -> str:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    from reachy_mini_conversation_app.config import config
+    from reachy_local_assistant.config import config
 
     p = argparse.ArgumentParser(description="Talk to the local Ollama+Piper pipeline (no robot).")
     p.add_argument("--model", default=config.OLLAMA_MODEL, help="Ollama conversation model")

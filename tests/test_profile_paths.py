@@ -5,10 +5,10 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-import reachy_mini_conversation_app.config as config_mod
-import reachy_mini_conversation_app.prompts as prompts_mod
-from reachy_mini_conversation_app.config import DEFAULT_PROFILES_DIRECTORY, config
-from reachy_mini_conversation_app.headless_personality import (
+import reachy_local_assistant.config as config_mod
+import reachy_local_assistant.prompts as prompts_mod
+from reachy_local_assistant.config import DEFAULT_PROFILES_DIRECTORY, config
+from reachy_local_assistant.headless_personality import (
     resolve_profile_dir,
     read_instructions_for,
 )
@@ -21,16 +21,16 @@ from reachy_mini_conversation_app.headless_personality import (
 # Project files (WINDOWS_PATH_BUDGET = 130):
 #   C:\Users\<username(20)>
 #     \.cache\huggingface\hub
-#     \spaces--pollen-robotics--reachy_mini_conversation_app
+#     \spaces--pollen-robotics--reachy_local_assistant
 #     \snapshots\<commit_hash(40)>\
 #   = 158 characters  =>  101 remaining to 259.
 #   The project root folder is not cloned in the snapshot, so we add it
-#   back to the budget: 101 + len("reachy_mini_conversation_app\") (29) = 130.
+#   back to the budget: 101 + len("reachy_local_assistant\") (29) = 130.
 #
 # Wheel files (WINDOWS_WHEEL_PATH_BUDGET = 71):
 #   C:\Users\<username(20)>
 #     \.cache\huggingface\hub
-#     \spaces--pollen-robotics--reachy_mini_conversation_app
+#     \spaces--pollen-robotics--reachy_local_assistant
 #     \snapshots\<commit_hash(40)>
 #     \build\bdist.win-amd64\wheel\
 #   = 186 characters  =>  73 remaining to 259.

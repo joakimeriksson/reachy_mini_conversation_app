@@ -27,14 +27,14 @@ from numpy.typing import NDArray
 from fastrtc import AdditionalOutputs, AsyncStreamHandler, wait_for_item
 from scipy.signal import resample
 
-from reachy_mini_conversation_app.audio.gemma_stt import GemmaSTT
-from reachy_mini_conversation_app.audio.tts import make_tts
-from reachy_mini_conversation_app.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
-from reachy_mini_conversation_app.config import config, set_custom_profile
-from reachy_mini_conversation_app.llm.ollama_chat import OllamaChat
-from reachy_mini_conversation_app.mcp_client import register_mcp_tools, shutdown_mcp
-from reachy_mini_conversation_app.prompts import get_session_instructions, get_session_voice
-from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from reachy_local_assistant.audio.gemma_stt import GemmaSTT
+from reachy_local_assistant.audio.tts import make_tts
+from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
+from reachy_local_assistant.config import config, set_custom_profile
+from reachy_local_assistant.llm.ollama_chat import OllamaChat
+from reachy_local_assistant.mcp_client import register_mcp_tools, shutdown_mcp
+from reachy_local_assistant.prompts import get_session_instructions, get_session_voice
+from reachy_local_assistant.tools.core_tools import ToolDependencies
 
 logger = logging.getLogger(__name__)
 

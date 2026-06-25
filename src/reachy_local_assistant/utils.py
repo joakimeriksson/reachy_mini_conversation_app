@@ -5,7 +5,7 @@ import warnings
 from typing import Optional
 
 from reachy_mini import ReachyMini
-from reachy_mini_conversation_app.camera_worker import CameraWorker
+from reachy_local_assistant.camera_worker import CameraWorker
 
 
 def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
@@ -60,7 +60,7 @@ def initialize_camera_and_vision(
     if not args.no_camera or local_webcam:
         if args.head_tracker is not None:
             if args.head_tracker == "yolo":
-                from reachy_mini_conversation_app.vision.yolo_head_tracker import HeadTracker
+                from reachy_local_assistant.vision.yolo_head_tracker import HeadTracker
 
                 head_tracker = HeadTracker()
             elif args.head_tracker == "mediapipe":

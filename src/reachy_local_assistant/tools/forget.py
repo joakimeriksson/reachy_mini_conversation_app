@@ -1,8 +1,8 @@
 import logging
 from typing import Any
 
-from reachy_mini_conversation_app.memory import forget_memory_fact
-from reachy_mini_conversation_app.tools.core_tools import Tool, ToolDependencies
+from reachy_local_assistant.memory import forget_memory_fact
+from reachy_local_assistant.tools.core_tools import Tool, ToolDependencies
 
 
 logger = logging.getLogger(__name__)

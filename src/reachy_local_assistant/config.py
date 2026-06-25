@@ -15,13 +15,13 @@ PROJECT_ROOT = Path(__file__).parents[2].resolve()
 
 def _is_source_checkout_root(root: Path) -> bool:
     """Return whether the given root looks like this project's source checkout."""
-    return (root / "pyproject.toml").is_file() and (root / "src" / "reachy_mini_conversation_app").is_dir()
+    return (root / "pyproject.toml").is_file() and (root / "src" / "reachy_local_assistant").is_dir()
 
 
 def _packaged_profiles_directory() -> Path | None:
     """Return the installed wheel's packaged profiles directory when available."""
     try:
-        return Path(str(files("reachy_talk_data").joinpath("profiles")))
+        return Path(str(files("reachy_local_data").joinpath("profiles")))
     except Exception:
         return None
 

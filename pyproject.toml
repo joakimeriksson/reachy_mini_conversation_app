@@ -57,6 +57,12 @@ localdev = [
   "sounddevice",
   "opencv-python>=4.12.0.88",  # dev-only: --local-webcam fallback (NOT shipped to the robot)
 ]
+# Self-hosted OpenAI-compatible voice server (scripts/voice_server.py). Piper engine
+# works with the core piper-tts; for the Kokoro engine also `pip install kokoro`.
+voiceserver = [
+  "fastapi",
+  "uvicorn",
+]
 
 [dependency-groups]
 dev = [

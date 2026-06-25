@@ -37,7 +37,7 @@ keys. A fork of Pollen's conversation app with the OpenAI Realtime backend
 - **Vision via the LLM:** the camera tool hands a frame to the multimodal model (Gemma); no separate vision model.
 - **Long-term memory:** `remember` / `forget` tools persist facts that are injected into the prompt across sessions.
 - **External tool servers:** built-in MCP client connects to remote MCP servers (token / API-key auth).
-- **Pluggable voice:** Piper locally, or an external **OpenAI-compatible `/v1/audio/speech`** voice server for a thin client.
+- **Pluggable voice:** Piper locally, or an external **OpenAI-compatible `/v1/audio/speech`** voice server for a thin client — run the included `scripts/voice_server.py` (Piper or Kokoro engine). See [DEPLOY.md](DEPLOY.md#self-hosted-voice-server-piper-or-kokoro).
 - **Layered motion:** dances, emotions, head-tracking and speech-reactive wobble.
 
 Everything heavy (Gemma, and optionally the voice generator) can run on a separate

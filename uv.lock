@@ -4708,6 +4708,10 @@ localdev = [
 mediapipe-vision = [
     { name = "mediapipe" },
 ]
+voiceserver = [
+    { name = "fastapi" },
+    { name = "uvicorn" },
+]
 yolo-vision = [
     { name = "supervision" },
     { name = "ultralytics" },
@@ -4727,6 +4731,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiortc", specifier = ">=1.13.0" },
+    { name = "fastapi", marker = "extra == 'voiceserver'" },
     { name = "fastmcp", specifier = ">=2.8" },
     { name = "fastrtc", specifier = ">=0.0.34" },
     { name = "gradio", specifier = "==5.50.1.dev1" },
@@ -4749,9 +4754,10 @@ requires-dist = [
     { name = "supervision", marker = "extra == 'yolo-vision'" },
     { name = "ultralytics", marker = "extra == 'all-vision'" },
     { name = "ultralytics", marker = "extra == 'yolo-vision'" },
+    { name = "uvicorn", marker = "extra == 'voiceserver'" },
     { name = "webrtcvad-wheels", specifier = ">=2.0.14" },
 ]
-provides-extras = ["yolo-vision", "mediapipe-vision", "all-vision", "localdev"]
+provides-extras = ["yolo-vision", "mediapipe-vision", "all-vision", "localdev", "voiceserver"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -92,6 +92,39 @@ Then just talk to the robot.
 
 ---
 
+# Self-hosted voice server (Piper or Kokoro)
+
+By default the app speaks with **local Piper** (`TTS_BACKEND=piper`). To offload
+TTS to a server (thin client), run the included OpenAI-compatible voice server
+(`scripts/voice_server.py`, exposes `/v1/audio/speech`) and point the app at it:
+
+```dotenv
+TTS_BACKEND=remote
+TTS_URL=http://<voice-host>:8880/v1/audio/speech
+TTS_VOICE=en_US-lessac-medium     # a voice for the chosen engine
+```
+
+Two interchangeable engines — pick at launch:
+
+```bash
+# Piper engine (light: reuses this repo's Piper voices)
+uv sync --extra voiceserver
+uv run python scripts/voice_server.py --engine piper --voice en_US-lessac-medium
+
+# Kokoro engine (hexgrad/Kokoro-82M; needs torch + the model download).
+# The voice server is a SEPARATE service, so install kokoro into ITS environment
+# only — it is deliberately NOT a project dependency (its huggingface-hub needs
+# would conflict with the app's pin). Run it with the venv python directly so
+# `uv run` doesn't re-sync it away:
+uv pip install kokoro
+.venv/bin/python scripts/voice_server.py --engine kokoro --voice af_heart --port 8881
+```
+
+Both return WAV that `RemoteTTS` decodes via `soundfile`. Verified end-to-end:
+Piper @ 22.05 kHz, Kokoro @ 24 kHz. Bind the host to `0.0.0.0` and open the port
+so the robot/client can reach it. `scripts/voice_server.py` lives outside `src/`,
+so it never ships in the robot wheel.
+
 ---
 
 # Deploy as a standalone on-robot app

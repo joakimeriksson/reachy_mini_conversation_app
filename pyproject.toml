@@ -27,6 +27,7 @@ dependencies = [
     "webrtcvad-wheels>=2.0.14",  # maintained fork; plain webrtcvad needs removed pkg_resources on py3.12
     "soundfile>=0.12",
     "httpx",  # remote TTS + MCP token fetch
+    "fastmcp>=2.8",  # MCP client (core — external tool servers)
 
     #Reachy mini
     "reachy_mini_dances_library",
@@ -48,9 +49,6 @@ all_vision = [
   "ultralytics",
   "supervision",
   "mediapipe==0.10.14",
-]
-mcp = [
-  "fastmcp>=2.8",
 ]
 # Standalone "fake robot" voice runner (scripts/local_chat.py, outside src/ so it
 # never ships in the wheel): talk to the Ollama+Piper pipeline via the computer's

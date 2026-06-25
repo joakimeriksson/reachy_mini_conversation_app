@@ -14,7 +14,6 @@ from fastrtc import Stream
 
 from reachy_mini import ReachyMini, ReachyMiniApp
 from reachy_mini_conversation_app.utils import (
-    CameraVisionInitializationError,
     parse_args,
     setup_logger,
     initialize_camera_and_vision,
@@ -101,11 +100,7 @@ def run(
         logger.info("Simulation mode detected. Automatically enabling gradio flag.")
         args.gradio = True
 
-    try:
-        camera_worker, vision_processor = initialize_camera_and_vision(args, robot)
-    except CameraVisionInitializationError as e:
-        logger.error("Failed to initialize camera/vision: %s", e)
-        sys.exit(1)
+    camera_worker = initialize_camera_and_vision(args, robot)
 
     movement_manager = MovementManager(
         current_robot=robot,
@@ -118,7 +113,6 @@ def run(
         reachy_mini=robot,
         movement_manager=movement_manager,
         camera_worker=camera_worker,
-        vision_processor=vision_processor,
         head_wobbler=head_wobbler,
         instance_path=instance_path,
     )

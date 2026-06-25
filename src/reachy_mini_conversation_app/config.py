@@ -158,12 +158,11 @@ else:
 class Config:
     """Configuration class for the conversation app."""
 
-    # Optional (HuggingFace: robot emotion datasets + optional local vision model)
+    # Optional (HuggingFace cache for robot emotion + dance datasets)
     HF_HOME = os.getenv("HF_HOME", "./cache")
-    LOCAL_VISION_MODEL = os.getenv("LOCAL_VISION_MODEL", "HuggingFaceTB/SmolVLM2-2.2B-Instruct")
     HF_TOKEN = os.getenv("HF_TOKEN")  # Optional, falls back to hf auth login if not set
 
-    logger.debug(f"HF_HOME: {HF_HOME}, Vision Model: {LOCAL_VISION_MODEL}")
+    logger.debug(f"HF_HOME: {HF_HOME}")
 
     # Filesystem root containing profile directories, not a Python import path.
     _profiles_directory_env = os.getenv("REACHY_MINI_EXTERNAL_PROFILES_DIRECTORY")

@@ -1,21 +1,11 @@
 from __future__ import annotations
-import sys
 import logging
 import argparse
 import warnings
-import subprocess
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from reachy_mini import ReachyMini
 from reachy_mini_conversation_app.camera_worker import CameraWorker
-
-
-if TYPE_CHECKING:
-    from reachy_mini_conversation_app.vision.processors import VisionProcessor
-
-
-class CameraVisionInitializationError(Exception):
-    """Raised when camera or vision setup fails in an expected way."""
 
 
 def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
@@ -35,12 +25,6 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
         help="Dev only: use the local machine's webcam (OpenCV) when robot.media has no camera",
     )
     parser.add_argument("--webcam-index", type=int, default=0, help="OpenCV webcam device index")
-    parser.add_argument(
-        "--local-vision",
-        default=False,
-        action="store_true",
-        help="Use a dedicated local vision model instead of the multimodal LLM for camera vision",
-    )
     parser.add_argument("--gradio", default=False, action="store_true", help="Open gradio interface")
     parser.add_argument("--debug", default=False, action="store_true", help="Enable debug logging")
     parser.add_argument(
@@ -62,11 +46,15 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
 def initialize_camera_and_vision(
     args: argparse.Namespace,
     current_robot: ReachyMini,
-) -> tuple[CameraWorker | None, VisionProcessor | None]:
-    """Initialize camera capture, optional head tracking, and optional local vision."""
+) -> CameraWorker | None:
+    """Initialize camera capture and optional head tracking.
+
+    Camera *vision* (describing what's seen) is handled by the multimodal LLM
+    (Gemma) — frames are injected into the chat by the camera tool — so there is
+    no separate vision model here.
+    """
     camera_worker: Optional[CameraWorker] = None
     head_tracker = None
-    vision_processor: Optional[VisionProcessor] = None
 
     local_webcam = getattr(args, "local_webcam", False)
     if not args.no_camera or local_webcam:
@@ -87,38 +75,7 @@ def initialize_camera_and_vision(
             webcam_index=getattr(args, "webcam_index", 0),
         )
 
-        if args.local_vision:
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    "from reachy_mini_conversation_app.vision.processors import VisionProcessor",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode < 0:
-                raise CameraVisionInitializationError(
-                    "Local vision import crashed on this machine. "
-                    "Run without --local-vision or install compatible dependencies.",
-                )
-            try:
-                from reachy_mini_conversation_app.vision.processors import initialize_vision_processor
-
-            except ImportError as e:
-                raise CameraVisionInitializationError(
-                    "To use --local-vision, please install the extra dependencies: pip install '.[local_vision]'",
-                ) from e
-
-            vision_processor = initialize_vision_processor()
-        else:
-            logging.getLogger(__name__).info(
-                "No local vision model selected; camera vision relies on the multimodal LLM (Gemma). "
-                "Use --local-vision for a dedicated local vision model.",
-            )
-
-    return camera_worker, vision_processor
+    return camera_worker
 
 
 def setup_logger(debug: bool) -> logging.Logger:

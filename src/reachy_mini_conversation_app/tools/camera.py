@@ -1,5 +1,4 @@
 import base64
-import asyncio
 import logging
 from typing import Any, Dict
 
@@ -44,16 +43,8 @@ class Camera(Tool):
             logger.error("Camera worker not available")
             return {"error": "Camera worker not available"}
 
-        if deps.vision_processor is not None:
-            vision_result = await asyncio.to_thread(
-                deps.vision_processor.process_image, frame, question,
-            )
-            return (
-                {"image_description": vision_result}
-                if isinstance(vision_result, str)
-                else {"error": "vision returned non-string"}
-            )
-
-        # Encode to JPEG via Pillow (keeps the robot wheel free of OpenCV).
+        # Encode to JPEG via Pillow (keeps the robot wheel free of OpenCV). The
+        # frame is handed to the multimodal LLM (Gemma) — the handler injects it
+        # into the chat so the model "sees" it directly.
         b64_encoded = base64.b64encode(encode_jpeg(frame)).decode("utf-8")
         return {"b64_im": b64_encoded}

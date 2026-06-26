@@ -43,9 +43,14 @@ class RemoteTTS:
         self._timeout = timeout
 
     def synthesize(
-        self, text: str, voice: Optional[str] = None
+        self, text: str, voice: Optional[str] = None, language: Optional[str] = None
     ) -> Iterator[Tuple[int, NDArray[np.int16]]]:
-        """Yield ``(sample_rate, int16_pcm)`` for *text* from the remote service."""
+        """Yield ``(sample_rate, int16_pcm)`` for *text* from the remote service.
+
+        *language* (e.g. the STT-detected language) is sent as an extra field so a
+        multilingual server (our Kokoro voice server) speaks it correctly instead
+        of guessing; servers that don't understand it ignore it.
+        """
         text = (text or "").strip()
         if not text:
             return
@@ -61,6 +66,8 @@ class RemoteTTS:
             "voice": voice or self._default_voice,
             "response_format": self._format,
         }
+        if language:
+            payload["language"] = language
         try:
             with httpx.Client(timeout=self._timeout) as client:
                 resp = client.post(self._url, json=payload, headers=headers)

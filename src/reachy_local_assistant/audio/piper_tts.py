@@ -32,11 +32,13 @@ class PiperTTS:
         self._voices: Dict[str, "object"] = {}  # name/path -> PiperVoice
 
     def synthesize(
-        self, text: str, voice: Optional[str] = None
+        self, text: str, voice: Optional[str] = None, language: Optional[str] = None
     ) -> Iterator[Tuple[int, NDArray[np.int16]]]:
         """Yield ``(sample_rate, int16_pcm)`` chunks for *text*.
 
         *voice* overrides the configured default (a voice name or .onnx path).
+        *language* is accepted for interface parity with RemoteTTS but unused —
+        a Piper voice is language-specific already.
         """
         text = (text or "").strip()
         if not text:

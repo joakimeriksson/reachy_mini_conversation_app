@@ -160,7 +160,7 @@ class LocalVoiceChat:
         """One full turn: STT → LLM → TTS → speaker."""
         self._speaking = True
         try:
-            text, _lang = await self._stt.transcribe(utterance)
+            text, lang = await self._stt.transcribe(utterance)
             if not text.strip():
                 return
             print(f"\n🧑  You:    {text}")
@@ -168,21 +168,21 @@ class LocalVoiceChat:
             reply = await self._chat.respond(text, image=image)
             print(f"🤖  Reachy: {reply}\n")
             if reply.strip():
-                await self._play(reply)
+                await self._play(reply, lang)
         finally:
             self._speaking = False
             self._vad.reset()
 
-    async def _play(self, text: str) -> None:
+    async def _play(self, text: str, language: str | None = None) -> None:
         import sounddevice as sd
 
         loop = asyncio.get_running_loop()
         # Stream sentence-by-sentence: the first sentence plays while the next one
         # synthesizes (low latency to first word), and each stays within Kokoro's
-        # per-utterance token cap.
+        # per-utterance token cap. *language* (from STT) routes a multilingual server.
         for sentence in split_sentences(text):
             chunks = await loop.run_in_executor(
-                None, lambda s=sentence: list(self._tts.synthesize(s, voice=self._voice))
+                None, lambda s=sentence: list(self._tts.synthesize(s, voice=self._voice, language=language))
             )
             if not chunks:
                 continue
@@ -256,7 +256,7 @@ class LocalVoiceChat:
         out_parts = []
         out_sr = 24000
         for sentence in split_sentences(reply):
-            cs = list(self._tts.synthesize(sentence, voice=self._voice))
+            cs = list(self._tts.synthesize(sentence, voice=self._voice, language=lang))
             if cs:
                 out_sr = cs[0][0]
                 out_parts.append(np.concatenate([c[1] for c in cs]))

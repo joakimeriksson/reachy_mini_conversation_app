@@ -124,7 +124,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._speaking = True  # gate the mic for the whole turn (half-duplex)
         self._set_listening(False)
         try:
-            text, _lang = await self._stt.transcribe(utterance)
+            text, lang = await self._stt.transcribe(utterance)
             if not text:
                 logger.debug("Empty transcription; ignoring utterance")
                 return
@@ -134,7 +134,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
             reply = await self._chat.respond(text)
             if reply:
                 await self.output_queue.put(AdditionalOutputs({"role": "assistant", "content": reply}))
-                await self._speak(reply)
+                await self._speak(reply, lang)
         except Exception as exc:
             logger.exception("Turn failed: %s", exc)
         finally:
@@ -150,12 +150,13 @@ class OllamaConversationHandler(AsyncStreamHandler):
             self._set_listening(True)
             self.last_activity_time = asyncio.get_event_loop().time()
 
-    async def _speak(self, text: str) -> None:
+    async def _speak(self, text: str, language: str | None = None) -> None:
         """Synthesize *text* sentence-by-sentence and stream each to wobbler + player.
 
         Splitting lets the first sentence start playing while later ones are still
         synthesizing (low latency to first word), and keeps each utterance within
-        Kokoro's per-utterance token limit.
+        Kokoro's per-utterance token limit. *language* (from STT) tells a
+        multilingual voice server which language to speak.
         """
         assert self._tts
         if self.deps.head_wobbler is not None:
@@ -168,7 +169,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
             if self._stop.is_set():
                 break
             # synthesis is blocking (CPU) or network-bound — keep it off the event loop
-            chunks = await loop.run_in_executor(None, self._synthesize, sentence)
+            chunks = await loop.run_in_executor(None, self._synthesize, sentence, language)
             for src_rate, pcm in chunks:
                 if self._stop.is_set():
                     break
@@ -189,9 +190,9 @@ class OllamaConversationHandler(AsyncStreamHandler):
         remaining = max(0.0, (play_start + duration) - loop.time())
         await asyncio.sleep(remaining + PLAYBACK_TAIL_S)
 
-    def _synthesize(self, text: str) -> list[Tuple[int, NDArray[np.int16]]]:
+    def _synthesize(self, text: str, language: str | None = None) -> list[Tuple[int, NDArray[np.int16]]]:
         assert self._tts
-        return list(self._tts.synthesize(text, voice=self._voice))
+        return list(self._tts.synthesize(text, voice=self._voice, language=language))
 
     # --- audio I/O (driven by LocalStream / fastrtc) ---------------------
 

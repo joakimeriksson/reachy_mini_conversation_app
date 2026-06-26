@@ -33,6 +33,7 @@ from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.mcp_client import shutdown_mcp, register_mcp_tools
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
+from reachy_local_assistant.audio.text_chunk import split_sentences
 from reachy_local_assistant.tools.core_tools import ToolDependencies
 
 
@@ -150,30 +151,43 @@ class OllamaConversationHandler(AsyncStreamHandler):
             self.last_activity_time = asyncio.get_event_loop().time()
 
     async def _speak(self, text: str) -> None:
-        """Synthesize *text* with Piper and stream it to wobbler + player."""
+        """Synthesize *text* sentence-by-sentence and stream each to wobbler + player.
+
+        Splitting lets the first sentence start playing while later ones are still
+        synthesizing (low latency to first word), and keeps each utterance within
+        Kokoro's per-utterance token limit.
+        """
         assert self._tts
         if self.deps.head_wobbler is not None:
             self.deps.head_wobbler.reset()
 
         loop = asyncio.get_running_loop()
-        # Piper synthesis is blocking/CPU-bound — run it off the event loop.
-        chunks = await loop.run_in_executor(None, self._synthesize, text)
         total_samples = 0
-        for src_rate, pcm in chunks:
+        play_start: float | None = None
+        for sentence in split_sentences(text):
             if self._stop.is_set():
                 break
-            pcm24 = self._resample_int16(pcm, src_rate, WOBBLER_SAMPLE_RATE)
-            total_samples += len(pcm24)
-            if self.deps.head_wobbler is not None:
-                self.deps.head_wobbler.feed(base64.b64encode(pcm24.tobytes()).decode("utf-8"))
-            await self.output_queue.put((WOBBLER_SAMPLE_RATE, pcm24))
+            # synthesis is blocking (CPU) or network-bound — keep it off the event loop
+            chunks = await loop.run_in_executor(None, self._synthesize, sentence)
+            for src_rate, pcm in chunks:
+                if self._stop.is_set():
+                    break
+                pcm24 = self._resample_int16(pcm, src_rate, WOBBLER_SAMPLE_RATE)
+                if play_start is None:
+                    play_start = loop.time()  # the first audio is about to play
+                total_samples += len(pcm24)
+                if self.deps.head_wobbler is not None:
+                    self.deps.head_wobbler.feed(base64.b64encode(pcm24.tobytes()).decode("utf-8"))
+                await self.output_queue.put((WOBBLER_SAMPLE_RATE, pcm24))
 
-        # Hold the half-duplex mic gate for the ACTUAL playback time. Synthesis is
-        # fast, but the audio plays out over `duration` (plus device/network
-        # latency); releasing the gate at synthesis time lets the mic capture
-        # Reachy's own voice and loop. Keep `_speaking` True until playback ends.
+        if play_start is None:
+            return
+        # Hold the half-duplex mic gate until playback actually finishes. Audio began
+        # playing at `play_start`; subtract the synthesis time already elapsed so we
+        # don't over-hold (releasing early would let the mic capture Reachy's voice).
         duration = total_samples / WOBBLER_SAMPLE_RATE
-        await asyncio.sleep(duration + PLAYBACK_TAIL_S)
+        remaining = max(0.0, (play_start + duration) - loop.time())
+        await asyncio.sleep(remaining + PLAYBACK_TAIL_S)
 
     def _synthesize(self, text: str) -> list[Tuple[int, NDArray[np.int16]]]:
         assert self._tts

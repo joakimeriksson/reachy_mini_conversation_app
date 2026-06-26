@@ -120,10 +120,22 @@ uv pip install kokoro
 .venv/bin/python scripts/voice_server.py --engine kokoro --voice af_heart --port 8881
 ```
 
-Both return WAV that `RemoteTTS` decodes via `soundfile`. Verified end-to-end:
-Piper @ 22.05 kHz, Kokoro @ 24 kHz. Bind the host to `0.0.0.0` and open the port
-so the robot/client can reach it. `scripts/voice_server.py` lives outside `src/`,
-so it never ships in the robot wheel.
+**Swedish** (`kokoro-sv` engine): Kokoro ships no Swedish, so this uses a
+fine-tuned voice from the sibling **swedish-kokoro** project — a torch-free ONNX
+model + espeak `sv` g2p (the model/voicepack auto-download from its HF repo). Point
+at the project with `--svml-path` or `$SWEDISH_KOKORO_PATH`:
+```bash
+uv pip install onnxruntime misaki phonemizer-fork espeakng_loader torch
+SWEDISH_KOKORO_PATH=../ai-smarthome/swedish-kokoro \
+  .venv/bin/python scripts/voice_server.py --engine kokoro-sv --port 8882
+# app: TTS_BACKEND=remote  TTS_URL=http://<host>:8882/v1/audio/speech
+```
+(For plain Swedish without the neural voice, use Piper `sv_SE-nst-medium` instead.)
+
+All engines return WAV that `RemoteTTS` decodes via `soundfile`. Verified
+end-to-end: Piper @ 22.05 kHz, Kokoro @ 24 kHz, Swedish Kokoro @ 24 kHz. Bind the
+host to `0.0.0.0` and open the port so the robot/client can reach it.
+`scripts/voice_server.py` lives outside `src/`, so it never ships in the robot wheel.
 
 ---
 

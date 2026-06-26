@@ -130,6 +130,22 @@ SWEDISH_KOKORO_PATH=../ai-smarthome/swedish-kokoro \
   .venv/bin/python scripts/voice_server.py --engine kokoro-sv --port 8882
 # app: TTS_BACKEND=remote  TTS_URL=http://<host>:8882/v1/audio/speech
 ```
+**`kokoro-svml` engine (Torch, neural g2p)** — the higher-quality path: the same
+fine-tuned voice but driven by `KokoroSVML`, whose `SwedishG2P` uses the **neural
+NST g2p** (correct loanword/name pronunciation) instead of espeak, and which also
+speaks the other Kokoro languages. It needs `kokoro` + `torch` **and the neural
+g2p model present** (the `swedish-tts/g2p` project, via `SV_NEURAL_G2P`/`SV_G2P_DIR`).
+Run it where that model lives — typically the GPU box:
+```bash
+SV_NEURAL_G2P=nst_g2p SV_G2P_DIR=/abs/path/to/swedish-tts/g2p \
+SWEDISH_KOKORO_PATH=/abs/path/to/swedish-kokoro \
+  python scripts/voice_server.py --engine kokoro-svml --host 0.0.0.0 --port 8880
+# startup log must say `swedish g2p backend=neural` (not espeak)
+```
+> Note: `KokoroSVML` defaults to the neural g2p and only checks that the *adapter*
+> imports, not the model — so on a machine **without** the g2p model it reports
+> `neural` then errors at synth. On espeak-only machines (Mac/robot) use `kokoro-sv`.
+
 (For plain Swedish without the neural voice, use Piper `sv_SE-nst-medium` instead.)
 
 All engines return WAV that `RemoteTTS` decodes via `soundfile`. Verified

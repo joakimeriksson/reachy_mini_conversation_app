@@ -39,10 +39,12 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.signal import resample
 
+from reachy_local_assistant.prompts import get_session_voice
+from reachy_local_assistant.audio.tts import make_tts
 from reachy_local_assistant.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT
-from reachy_local_assistant.audio.piper_tts import PiperTTS
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
+from reachy_local_assistant.audio.text_chunk import split_sentences
 
 
 logger = logging.getLogger("local_chat")
@@ -121,37 +123,20 @@ class CameraGrabber:
             self._cap.release()
 
 
-def _ensure_voice(voice: str, data_dir: Path) -> str:
-    """Return a usable Piper voice, downloading it into *data_dir* if missing."""
-    if Path(voice).suffix == ".onnx" and Path(voice).is_file():
-        return voice
-    onnx = data_dir / f"{voice}.onnx"
-    if onnx.is_file():
-        return voice
-    logger.info("Downloading Piper voice %s into %s ...", voice, data_dir)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    import subprocess
-
-    subprocess.run(
-        [sys.executable, "-m", "piper.download_voices", voice, "--data-dir", str(data_dir)],
-        check=True,
-    )
-    return voice
-
-
 class LocalVoiceChat:
     """Wires the local backend modules to a simple turn-based loop."""
 
     def __init__(self, args: argparse.Namespace) -> None:
-        data_dir = Path(args.voice_dir).resolve()
-        voice = _ensure_voice(args.voice, data_dir)
-
         self._stt = GemmaSTT(args.stt_model or args.model, args.ollama_url)
         self._chat = OllamaChat(
             args.model, args.ollama_url, deps=None,
             system_prompt=_load_system_prompt(args.profile), enable_tools=False,
         )
-        self._tts = PiperTTS(default_voice=voice, data_dir=str(data_dir))
+        # make_tts() picks Piper (local) or RemoteTTS (the voice server) from
+        # TTS_BACKEND/TTS_URL — so this no-robot runner speaks through the exact
+        # same path as the real app/robot (incl. the Swedish Kokoro voice server).
+        self._tts = make_tts()
+        self._voice = get_session_voice()
         self._vad = VadSegmenter(aggressiveness=args.aggressiveness, silence_ms=args.silence_ms)
         self._speaking = False
 
@@ -192,12 +177,18 @@ class LocalVoiceChat:
         import sounddevice as sd
 
         loop = asyncio.get_running_loop()
-        chunks = await loop.run_in_executor(None, lambda: list(self._tts.synthesize(text)))
-        if not chunks:
-            return
-        sr = chunks[0][0]
-        pcm = np.concatenate([c[1] for c in chunks])
-        await loop.run_in_executor(None, lambda: (sd.play(pcm, sr), sd.wait()))
+        # Stream sentence-by-sentence: the first sentence plays while the next one
+        # synthesizes (low latency to first word), and each stays within Kokoro's
+        # per-utterance token cap.
+        for sentence in split_sentences(text):
+            chunks = await loop.run_in_executor(
+                None, lambda s=sentence: list(self._tts.synthesize(s, voice=self._voice))
+            )
+            if not chunks:
+                continue
+            sr = chunks[0][0]
+            pcm = np.concatenate([c[1] for c in chunks])
+            await loop.run_in_executor(None, lambda p=pcm, r=sr: (sd.play(p, r), sd.wait()))
 
     async def run_live(self, input_device: int | None) -> None:
         import sounddevice as sd
@@ -237,7 +228,10 @@ class LocalVoiceChat:
 
         phrase = "Hello, who are you? Please answer in one short sentence."
         print(f"[self-test] synthesizing prompt: {phrase!r}")
-        synth = list(self._tts.synthesize(phrase))
+        synth = list(self._tts.synthesize(phrase, voice=self._voice))
+        if not synth:
+            print("[self-test] FAIL: TTS produced no audio (is the voice server running / TTS_URL right?)")
+            return 1
         sr = synth[0][0]
         spoken = np.concatenate([c[1] for c in synth])
         pcm16 = np.clip(
@@ -259,9 +253,14 @@ class LocalVoiceChat:
             print("[self-test] FAIL: empty reply")
             return 1
 
-        out_chunks = list(self._tts.synthesize(reply))
-        out_sr = out_chunks[0][0]
-        out = np.concatenate([c[1] for c in out_chunks])
+        out_parts = []
+        out_sr = 24000
+        for sentence in split_sentences(reply):
+            cs = list(self._tts.synthesize(sentence, voice=self._voice))
+            if cs:
+                out_sr = cs[0][0]
+                out_parts.append(np.concatenate([c[1] for c in cs]))
+        out = np.concatenate(out_parts) if out_parts else np.zeros(0, dtype=np.int16)
         out_path = Path("/tmp/reachy_reply.wav")
         sf.write(out_path, out, out_sr, subtype="PCM_16")
         print(f"[self-test] PASS — reply audio: {out_path} ({len(out)/out_sr:.1f}s @ {out_sr} Hz)")

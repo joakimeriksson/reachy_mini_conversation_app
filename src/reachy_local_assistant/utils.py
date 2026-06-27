@@ -13,9 +13,9 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
     parser = argparse.ArgumentParser("Reachy Mini Conversation App")
     parser.add_argument(
         "--head-tracker",
-        choices=["yolo", "mediapipe"],
+        choices=["mediapipe"],
         default=None,
-        help="Head-tracking backend: yolo uses a local face detector, mediapipe uses reachy_mini_toolbox. Disabled by default.",
+        help="Head-tracking backend (mediapipe, via reachy_mini_toolbox). Disabled by default.",
     )
     parser.add_argument("--no-camera", default=False, action="store_true", help="Disable camera usage")
     parser.add_argument(
@@ -58,15 +58,10 @@ def initialize_camera_and_vision(
 
     local_webcam = getattr(args, "local_webcam", False)
     if not args.no_camera or local_webcam:
-        if args.head_tracker is not None:
-            if args.head_tracker == "yolo":
-                from reachy_local_assistant.vision.yolo_head_tracker import HeadTracker
+        if args.head_tracker == "mediapipe":
+            from reachy_mini_toolbox.vision import HeadTracker
 
-                head_tracker = HeadTracker()
-            elif args.head_tracker == "mediapipe":
-                from reachy_mini_toolbox.vision import HeadTracker  # type: ignore[no-redef]
-
-                head_tracker = HeadTracker()
+            head_tracker = HeadTracker()
 
         camera_worker = CameraWorker(
             current_robot,

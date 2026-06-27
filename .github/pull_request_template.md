@@ -28,7 +28,7 @@
 <summary><strong>Vision / motion</strong> — expand if your PR touches these</summary>
 
 - [ ] Local vision (`--local-vision`)
-- [ ] Head tracker (`--head-tracker {yolo,mediapipe}`)
+- [ ] Head tracker (`--head-tracker {mediapipe}`)
 - [ ] Camera pipeline (with/without `--no-camera`)
 - [ ] Movement manager (dances, emotions, head motion)
 - [ ] Head wobble

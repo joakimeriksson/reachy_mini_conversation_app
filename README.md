@@ -76,7 +76,6 @@ uv sync
 
 Optional extras:
 ```bash
-uv sync --extra yolo_vision        # YOLO head-tracking backend
 uv sync --extra mediapipe_vision   # MediaPipe head-tracking
 uv sync --extra localdev           # standalone "fake robot" runner (sounddevice + webcam)
 uv sync --group dev                # dev tooling (pytest/ruff/mypy)
@@ -84,10 +83,9 @@ uv sync --group dev                # dev tooling (pytest/ruff/mypy)
 
 | Extra | Purpose |
 |-------|---------|
-| `yolo_vision` | YOLO face detection for the `yolo` head-tracker (aiming the head) |
-| `mediapipe_vision` | MediaPipe landmarks for the `mediapipe` head-tracker |
-| `all_vision` | Both head-tracking backends |
+| `mediapipe_vision` | MediaPipe landmarks for the `mediapipe` head-tracker (aiming the head) |
 | `localdev` | `scripts/local_chat.py` — talk via your computer's mic/speaker/webcam (no robot). Not shipped to the robot. |
+| `voiceserver` / `aec` | Self-hosted voice server (fastapi+uvicorn) / echo cancellation for barge-in (livekit). |
 
 > The conversation **vision** is the multimodal LLM itself — there is no separate
 > local vision model (no torch/transformers).
@@ -122,7 +120,7 @@ robot). In **simulation** it auto-enables a Gradio web UI at http://localhost:78
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--head-tracker {yolo,mediapipe}` | `None` | Head-tracking backend (requires the matching extra). |
+| `--head-tracker {mediapipe}` | `None` | Head-tracking backend (requires the matching extra). |
 | `--no-camera` | `False` | Run without the camera. |
 | `--local-webcam` | `False` | Dev only: use the computer's webcam (OpenCV) when `robot.media` has no camera. |
 | `--webcam-index` | `0` | OpenCV webcam device index. |

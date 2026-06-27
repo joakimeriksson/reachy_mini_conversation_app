@@ -223,6 +223,10 @@ class Config:
     VAD_SILENCE_MS = _env_int("VAD_SILENCE_MS", 800)
     VAD_MIN_SPEECH_MS = _env_int("VAD_MIN_SPEECH_MS", 200)
     VAD_MAX_UTTERANCE_MS = _env_int("VAD_MAX_UTTERANCE_MS", 15000)
+    # VAD detector: "webrtc" (light, classic) or "silero" (neural, onnx, torch-free;
+    # better speech-vs-noise/echo discrimination — model auto-downloads on first use).
+    VAD_BACKEND = os.getenv("VAD_BACKEND", "webrtc")
+    VAD_THRESHOLD = float(os.getenv("VAD_THRESHOLD", "0.5"))  # silero speech probability
 
     # Barge-in: let the user interrupt Reachy mid-reply. A strict VAD runs *during*
     # playback; once it sees BARGE_IN_SPEECH_MS of sustained speech it flushes queued

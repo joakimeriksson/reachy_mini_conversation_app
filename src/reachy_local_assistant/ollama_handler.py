@@ -77,6 +77,8 @@ class OllamaConversationHandler(AsyncStreamHandler):
             silence_ms=self._vad_silence,
             min_speech_ms=config.VAD_MIN_SPEECH_MS,
             max_utterance_ms=config.VAD_MAX_UTTERANCE_MS,
+            backend=config.VAD_BACKEND,
+            threshold=config.VAD_THRESHOLD,
         )
         # Backends are built in start_up() so construction stays cheap/import-safe.
         self._stt: Optional[GemmaSTT] = None
@@ -115,6 +117,8 @@ class OllamaConversationHandler(AsyncStreamHandler):
                 silence_ms=200,
                 min_speech_ms=config.BARGE_IN_SPEECH_MS,
                 max_utterance_ms=config.VAD_MAX_UTTERANCE_MS,
+                backend=config.VAD_BACKEND,
+                threshold=config.VAD_THRESHOLD,
             )
             logger.info("Barge-in enabled (sustained speech >= %d ms)", config.BARGE_IN_SPEECH_MS)
         if config.AEC:
@@ -269,6 +273,8 @@ class OllamaConversationHandler(AsyncStreamHandler):
                 silence_ms=self._vad_silence,
                 min_speech_ms=config.VAD_MIN_SPEECH_MS,
                 max_utterance_ms=config.VAD_MAX_UTTERANCE_MS,
+                backend=config.VAD_BACKEND,
+                threshold=config.VAD_THRESHOLD,
             )
             logger.info("VAD updated: aggressiveness=%d silence_ms=%d", self._vad_aggr, self._vad_silence)
 

@@ -88,6 +88,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._stop = asyncio.Event()
         self._interrupt = asyncio.Event()  # set when the user barges in mid-reply
         self._barge_vad: Optional[VadSegmenter] = None  # strict VAD for barge-in (built if BARGE_IN)
+        self._aec: Any = None  # EchoCanceller when AEC enabled (cleans mic of Reachy's voice)
         self.last_activity_time = asyncio.get_event_loop().time()
 
     def copy(self) -> "OllamaConversationHandler":
@@ -116,6 +117,14 @@ class OllamaConversationHandler(AsyncStreamHandler):
                 max_utterance_ms=config.VAD_MAX_UTTERANCE_MS,
             )
             logger.info("Barge-in enabled (sustained speech >= %d ms)", config.BARGE_IN_SPEECH_MS)
+        if config.AEC:
+            try:
+                from reachy_local_assistant.audio.aec import EchoCanceller
+
+                self._aec = EchoCanceller()
+                logger.info("AEC enabled (echo cancellation on the mic)")
+            except Exception as exc:  # missing livekit / init failure shouldn't kill the app
+                logger.warning("AEC requested but unavailable (%s); install the 'aec' extra", exc)
 
         try:
             count = await register_mcp_tools()
@@ -236,6 +245,10 @@ class OllamaConversationHandler(AsyncStreamHandler):
         sample_rate, audio = frame
         audio = self._to_mono(audio)
         pcm16 = self._resample_int16(audio, sample_rate, VAD_SAMPLE_RATE)
+        if self._aec is not None:
+            pcm16 = self._aec.clean(pcm16)  # remove Reachy's echo (10 ms-aligned; may buffer)
+            if len(pcm16) == 0:
+                return
 
         if self._speaking:
             if self._barge_vad is None:
@@ -273,8 +286,16 @@ class OllamaConversationHandler(AsyncStreamHandler):
             self.deps.head_wobbler.reset()
 
     async def emit(self) -> Tuple[int, NDArray[np.int16]] | AdditionalOutputs | None:
-        """Return the next output item (audio chunk or transcript)."""
-        return await wait_for_item(self.output_queue)  # type: ignore[no-any-return]
+        """Return the next output item (audio chunk or transcript).
+
+        When AEC is on, the audio handed to the player is also fed to the canceller
+        as the far-end reference (resampled to 16 kHz) so it can subtract the echo.
+        """
+        item = await wait_for_item(self.output_queue)
+        if self._aec is not None and isinstance(item, tuple):
+            rate, pcm = item
+            self._aec.play_reference(self._resample_int16(pcm, rate, VAD_SAMPLE_RATE))
+        return item  # type: ignore[no-any-return]
 
     async def shutdown(self) -> None:
         """Stop the loop and disconnect MCP clients."""

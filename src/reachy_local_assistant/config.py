@@ -230,6 +230,10 @@ class Config:
     # Reachy and can self-interrupt, so use headphones (or AEC). Off by default.
     BARGE_IN = _env_flag("BARGE_IN", default=False)
     BARGE_IN_SPEECH_MS = _env_int("BARGE_IN_SPEECH_MS", 400)
+    # Acoustic echo cancellation (livekit WebRTC APM, the `aec` extra). Removes
+    # Reachy's own voice from the mic so barge-in works on open speakers, not just
+    # headphones. Needs BARGE_IN to matter. Off by default.
+    AEC = _env_flag("AEC", default=False)
 
     logger.debug(f"Custom Profile: {REACHY_MINI_CUSTOM_PROFILE}")
 

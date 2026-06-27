@@ -76,7 +76,7 @@ class _SileroDetector:
         self._threshold = threshold
         self._sr = np.array(VAD_SAMPLE_RATE, dtype=np.int64)
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
-        self._context = np.zeros(self._CONTEXT, dtype=np.float32)
+        self._context: NDArray[np.float32] = np.zeros(self._CONTEXT, dtype=np.float32)
 
     def is_speech(self, frame: NDArray[np.int16]) -> bool:
         chunk = frame.astype(np.float32) / 32768.0

@@ -79,15 +79,18 @@ class OllamaChat:
         """Clear conversation history, keeping the current system prompt."""
         self._messages = [{"role": "system", "content": self._system_prompt}]
 
-    async def respond(self, user_text: str, image: bytes | None = None) -> str:
+    async def respond(self, user_text: str, image: bytes | None = None, audio: bytes | None = None) -> str:
         """Run one user turn (with tool calls) and return the assistant's text.
 
-        *image* optionally attaches an encoded image (e.g. JPEG bytes) to the
-        user turn, so a multimodal model like Gemma can "see" while it answers.
+        *image* attaches an encoded image (e.g. JPEG) so a multimodal model can
+        "see"; *audio* attaches a WAV of the user's speech so the model answers the
+        spoken input directly (one call, no separate STT). Both go in Ollama's
+        ``images`` blob field; *user_text* may be empty when audio carries the turn.
         """
+        blobs = [b for b in (audio, image) if b is not None]
         user_msg: Dict[str, Any] = {"role": "user", "content": user_text}
-        if image is not None:
-            user_msg["images"] = [image]
+        if blobs:
+            user_msg["images"] = blobs
         self._messages.append(user_msg)
         tools = to_ollama_tools(self._get_tool_specs()) if self._enable_tools else []
 

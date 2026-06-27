@@ -22,6 +22,15 @@ from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 
+
+def pcm16_to_wav_bytes(audio: NDArray[np.int16], sample_rate: int = 16000) -> bytes:
+    """Wrap a mono int16 PCM utterance as WAV bytes (for Ollama's ``images`` field)."""
+    import soundfile as sf
+
+    buf = io.BytesIO()
+    sf.write(buf, np.asarray(audio).reshape(-1), sample_rate, format="WAV", subtype="PCM_16")
+    return buf.getvalue()
+
 # Ask for strict JSON so we can recover both text and language. Gemma is an LLM,
 # so this is reliable; we still parse defensively.
 _PROMPT = (
@@ -72,12 +81,7 @@ class GemmaSTT:
         return self._parse(raw)
 
     def _to_wav_bytes(self, audio: NDArray[np.int16]) -> bytes:
-        import soundfile as sf
-
-        buf = io.BytesIO()
-        samples = np.asarray(audio).reshape(-1)
-        sf.write(buf, samples, self._sample_rate, format="WAV", subtype="PCM_16")
-        return buf.getvalue()
+        return pcm16_to_wav_bytes(audio, self._sample_rate)
 
     @staticmethod
     def _parse(raw: str) -> Tuple[str, str]:

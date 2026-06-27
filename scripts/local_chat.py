@@ -127,10 +127,19 @@ class LocalVoiceChat:
     """Wires the local backend modules to a simple turn-based loop."""
 
     def __init__(self, args: argparse.Namespace) -> None:
+        from reachy_local_assistant.config import config
+
+        self._direct_audio = config.OLLAMA_DIRECT_AUDIO
+        prompt = _load_system_prompt(args.profile)
+        if self._direct_audio:
+            prompt += (
+                "\n\nThe user speaks to you through attached audio. Listen and respond "
+                "directly and naturally to what they say — never transcribe or repeat it."
+            )
         self._stt = GemmaSTT(args.stt_model or args.model, args.ollama_url)
         self._chat = OllamaChat(
             args.model, args.ollama_url, deps=None,
-            system_prompt=_load_system_prompt(args.profile), enable_tools=False,
+            system_prompt=prompt, enable_tools=False,
         )
         # make_tts() picks Piper (local) or RemoteTTS (the voice server) from
         # TTS_BACKEND/TTS_URL — so this no-robot runner speaks through the exact
@@ -160,12 +169,20 @@ class LocalVoiceChat:
         """One full turn: STT → LLM → TTS → speaker."""
         self._speaking = True
         try:
-            text, lang = await self._stt.transcribe(utterance)
-            if not text.strip():
-                return
-            print(f"\n🧑  You:    {text}")
-            image = self._maybe_capture(text)
-            reply = await self._chat.respond(text, image=image)
+            lang: str | None
+            if self._direct_audio:
+                from reachy_local_assistant.audio.gemma_stt import pcm16_to_wav_bytes
+
+                print("\n🧑  You:    🎤 …")
+                reply = await self._chat.respond("", audio=pcm16_to_wav_bytes(utterance, VAD_SAMPLE_RATE))
+                lang = None
+            else:
+                text, lang = await self._stt.transcribe(utterance)
+                if not text.strip():
+                    return
+                print(f"\n🧑  You:    {text}")
+                image = self._maybe_capture(text)
+                reply = await self._chat.respond(text, image=image)
             print(f"🤖  Reachy: {reply}\n")
             if reply.strip():
                 await self._play(reply, lang)
@@ -239,15 +256,22 @@ class LocalVoiceChat:
             -32768, 32767,
         ).astype(np.int16)
 
-        print("[self-test] transcribing via Gemma…")
-        heard, lang = await self._stt.transcribe(pcm16)
-        print(f"[self-test] heard ({lang or '?'}): {heard!r}")
-        if not heard.strip():
-            print("[self-test] FAIL: empty transcription")
-            return 1
+        lang: str | None
+        if self._direct_audio:
+            from reachy_local_assistant.audio.gemma_stt import pcm16_to_wav_bytes
 
-        print("[self-test] asking the model…")
-        reply = await self._chat.respond(heard)
+            print("[self-test] asking the model directly from audio (one call)…")
+            reply = await self._chat.respond("", audio=pcm16_to_wav_bytes(pcm16, VAD_SAMPLE_RATE))
+            lang = None
+        else:
+            print("[self-test] transcribing via Gemma…")
+            heard, lang = await self._stt.transcribe(pcm16)
+            print(f"[self-test] heard ({lang or '?'}): {heard!r}")
+            if not heard.strip():
+                print("[self-test] FAIL: empty transcription")
+                return 1
+            print("[self-test] asking the model…")
+            reply = await self._chat.respond(heard)
         print(f"[self-test] reply: {reply!r}")
         if not reply.strip():
             print("[self-test] FAIL: empty reply")

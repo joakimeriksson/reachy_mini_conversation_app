@@ -31,7 +31,7 @@ from reachy_local_assistant.prompts import get_session_voice, get_session_instru
 from reachy_local_assistant.audio.tts import make_tts
 from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.mcp_client import shutdown_mcp, register_mcp_tools
-from reachy_local_assistant.audio.gemma_stt import GemmaSTT
+from reachy_local_assistant.audio.gemma_stt import GemmaSTT, pcm16_to_wav_bytes
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
 from reachy_local_assistant.audio.text_chunk import split_sentences
 from reachy_local_assistant.tools.core_tools import ToolDependencies
@@ -97,6 +97,11 @@ class OllamaConversationHandler(AsyncStreamHandler):
     async def start_up(self) -> None:
         """Build backends, register MCP tools, and run the conversation loop."""
         instructions = get_session_instructions(self.instance_path)
+        if config.OLLAMA_DIRECT_AUDIO:
+            instructions += (
+                "\n\nThe user speaks to you through attached audio. Listen and respond "
+                "directly and naturally to what they say — never transcribe or repeat it back."
+            )
         self._stt = GemmaSTT(config.OLLAMA_STT_MODEL, config.OLLAMA_URL)
         self._chat = OllamaChat(config.OLLAMA_MODEL, config.OLLAMA_URL, self.deps, instructions)
         self._tts = make_tts()
@@ -124,14 +129,21 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._speaking = True  # gate the mic for the whole turn (half-duplex)
         self._set_listening(False)
         try:
-            text, lang = await self._stt.transcribe(utterance)
-            if not text:
-                logger.debug("Empty transcription; ignoring utterance")
-                return
-            self.last_activity_time = asyncio.get_event_loop().time()
-            await self.output_queue.put(AdditionalOutputs({"role": "user", "content": text}))
+            lang: str | None
+            if config.OLLAMA_DIRECT_AUDIO:
+                # One call: feed the speech straight to the chat model (no separate STT).
+                await self.output_queue.put(AdditionalOutputs({"role": "user", "content": "🎤 …"}))
+                reply = await self._chat.respond("", audio=pcm16_to_wav_bytes(utterance, VAD_SAMPLE_RATE))
+                lang = None  # no STT language; the TTS auto-detects from the reply
+            else:
+                text, lang = await self._stt.transcribe(utterance)
+                if not text:
+                    logger.debug("Empty transcription; ignoring utterance")
+                    return
+                await self.output_queue.put(AdditionalOutputs({"role": "user", "content": text}))
+                reply = await self._chat.respond(text)
 
-            reply = await self._chat.respond(text)
+            self.last_activity_time = asyncio.get_event_loop().time()
             if reply:
                 await self.output_queue.put(AdditionalOutputs({"role": "assistant", "content": reply}))
                 await self._speak(reply, lang)

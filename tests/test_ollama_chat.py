@@ -154,6 +154,19 @@ async def test_set_system_prompt_updates_in_place(chat_mod, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_respond_attaches_audio_to_user_turn(chat_mod, monkeypatch):
+    """Direct-audio mode: WAV bytes ride along in the user turn's images field."""
+    mod, _ = chat_mod
+    client = FakeOllamaClient([{"message": {"content": "Paris."}}])
+    _patch_client(monkeypatch, client)
+    chat = mod.OllamaChat("m", "http://x", deps=None, system_prompt="sys")
+    await chat.respond("", audio=b"WAVDATA")
+    user_msg = client.calls[0]["messages"][-1]
+    assert user_msg["role"] == "user"
+    assert user_msg["images"] == [b"WAVDATA"]
+
+
+@pytest.mark.asyncio
 async def test_respond_returns_empty_on_backend_error(chat_mod, monkeypatch):
     mod, _ = chat_mod
 

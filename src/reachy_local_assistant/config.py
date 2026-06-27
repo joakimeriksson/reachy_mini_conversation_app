@@ -190,6 +190,10 @@ class Config:
     OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
     # Enable chain-of-thought "thinking" for the chat model (slower, sometimes better).
     OLLAMA_THINK = _env_flag("OLLAMA_THINK", default=False)
+    # Feed the user's audio straight into the chat model (one call: speech -> reply)
+    # instead of a separate STT pass. ~2x lower LLM latency and the model hears tone,
+    # but there's no separate transcript and TTS language is auto-detected from the reply.
+    OLLAMA_DIRECT_AUDIO = _env_flag("OLLAMA_DIRECT_AUDIO", default=False)
 
     # --- Text-to-speech backend ---
     # "piper" = local Piper (default); "remote" = external voice generator via an

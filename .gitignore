@@ -61,3 +61,7 @@ cache/
 src/reachy_local_assistant/profiles/user_personalities/
 piper_voices/
 .venv-local/
+
+# isolated voice-server env
+voice-server/.venv/
+voice-server/uv.lock

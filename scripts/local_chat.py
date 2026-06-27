@@ -27,6 +27,7 @@ import sys
 import asyncio
 import logging
 import argparse
+import threading
 from pathlib import Path
 
 
@@ -146,8 +147,19 @@ class LocalVoiceChat:
         # same path as the real app/robot (incl. the Swedish Kokoro voice server).
         self._tts = make_tts()
         self._voice = get_session_voice()
-        self._vad = VadSegmenter(aggressiveness=args.aggressiveness, silence_ms=args.silence_ms)
+        self._vad = VadSegmenter(
+            aggressiveness=args.aggressiveness, silence_ms=args.silence_ms,
+            backend=config.VAD_BACKEND, threshold=config.VAD_THRESHOLD,
+        )
         self._speaking = False
+        # Barge-in: a strict VAD watches for the user talking over playback.
+        self._interrupt = threading.Event()
+        self._barge_vad: VadSegmenter | None = None
+        if config.BARGE_IN:
+            self._barge_vad = VadSegmenter(
+                aggressiveness=3, silence_ms=200, min_speech_ms=config.BARGE_IN_SPEECH_MS,
+                backend=config.VAD_BACKEND, threshold=config.VAD_THRESHOLD,
+            )
 
         self._always_vision = args.always_vision
         self._camera: CameraGrabber | None = None
@@ -194,10 +206,15 @@ class LocalVoiceChat:
         import sounddevice as sd
 
         loop = asyncio.get_running_loop()
+        self._interrupt.clear()
+        if self._barge_vad is not None:
+            self._barge_vad.reset()
         # Stream sentence-by-sentence: the first sentence plays while the next one
         # synthesizes (low latency to first word), and each stays within Kokoro's
         # per-utterance token cap. *language* (from STT) routes a multilingual server.
         for sentence in split_sentences(text):
+            if self._interrupt.is_set():
+                break
             chunks = await loop.run_in_executor(
                 None, lambda s=sentence: list(self._tts.synthesize(s, voice=self._voice, language=language))
             )
@@ -205,7 +222,14 @@ class LocalVoiceChat:
                 continue
             sr = chunks[0][0]
             pcm = np.concatenate([c[1] for c in chunks])
-            await loop.run_in_executor(None, lambda p=pcm, r=sr: (sd.play(p, r), sd.wait()))
+            sd.play(pcm, sr)  # non-blocking, so we can interrupt on barge-in
+            while sd.get_stream().active:
+                if self._interrupt.is_set():
+                    sd.stop()
+                    break
+                await asyncio.sleep(0.02)
+            if self._interrupt.is_set():
+                break
 
     async def run_live(self, input_device: int | None) -> None:
         import sounddevice as sd
@@ -216,9 +240,14 @@ class LocalVoiceChat:
         def callback(indata, frames, time_info, status):  # runs on the audio thread
             if status:
                 logger.debug("audio status: %s", status)
-            if self._speaking:
-                return  # half-duplex: ignore mic while speaking
             pcm = indata[:, 0].copy()
+            if self._speaking:
+                if self._barge_vad is not None:  # barge-in: user talking over playback
+                    self._barge_vad.feed(pcm)
+                    if self._barge_vad.in_speech and not self._interrupt.is_set():
+                        self._interrupt.set()
+                        print("   ✋ (barge-in)")
+                return  # half-duplex otherwise
             for utt in self._vad.feed(pcm):
                 loop.call_soon_threadsafe(queue.put_nowait, utt)
 

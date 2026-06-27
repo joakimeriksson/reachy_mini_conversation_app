@@ -29,6 +29,7 @@ import logging
 import argparse
 import threading
 from pathlib import Path
+from collections import deque
 
 
 # Make the in-repo package importable when run as a plain script from the repo root.
@@ -152,6 +153,11 @@ class LocalVoiceChat:
             backend=config.VAD_BACKEND, threshold=config.VAD_THRESHOLD,
         )
         self._speaking = False
+        # Full-duplex playback: the output stream pulls from this buffer (16 kHz),
+        # so the input stream can keep listening with echo cancelled (barge-in).
+        self._play_buf: "deque[NDArray[np.int16]]" = deque()
+        self._play_lock = threading.Lock()
+        self._tts_active = False  # True only while audio is queued/playing
         # Barge-in: a strict VAD watches for the user talking over playback.
         self._interrupt = threading.Event()
         self._barge_vad: VadSegmenter | None = None
@@ -160,6 +166,18 @@ class LocalVoiceChat:
                 aggressiveness=3, silence_ms=200, min_speech_ms=config.BARGE_IN_SPEECH_MS,
                 backend=config.VAD_BACKEND, threshold=config.VAD_THRESHOLD,
             )
+        # Acoustic echo cancellation — required for barge-in on open speakers (else the
+        # mic hears Reachy and self-interrupts). Shared by both audio callbacks via a lock.
+        self._aec = None
+        self._aec_lock = threading.Lock()
+        if config.AEC:
+            try:
+                from reachy_local_assistant.audio.aec import EchoCanceller
+
+                self._aec = EchoCanceller()
+                print("🎚️  Echo cancellation on")
+            except Exception as exc:
+                print(f"   (AEC unavailable: {exc} — on speakers barge-in will hear itself)")
 
         self._always_vision = args.always_vision
         self._camera: CameraGrabber | None = None
@@ -203,68 +221,119 @@ class LocalVoiceChat:
             self._vad.reset()
 
     async def _play(self, text: str, language: str | None = None) -> None:
-        import sounddevice as sd
+        from scipy.signal import resample
 
         loop = asyncio.get_running_loop()
         self._interrupt.clear()
         if self._barge_vad is not None:
             self._barge_vad.reset()
-        # Stream sentence-by-sentence: the first sentence plays while the next one
-        # synthesizes (low latency to first word), and each stays within Kokoro's
-        # per-utterance token cap. *language* (from STT) routes a multilingual server.
-        for sentence in split_sentences(text):
-            if self._interrupt.is_set():
-                break
-            chunks = await loop.run_in_executor(
-                None, lambda s=sentence: list(self._tts.synthesize(s, voice=self._voice, language=language))
-            )
-            if not chunks:
-                continue
-            sr = chunks[0][0]
-            pcm = np.concatenate([c[1] for c in chunks])
-            sd.play(pcm, sr)  # non-blocking, so we can interrupt on barge-in
-            while sd.get_stream().active:
+        self._tts_active = True
+        try:
+            # Stream sentence-by-sentence into the playback buffer (resampled to the
+            # 16 kHz output stream). First sentence plays while the next synthesizes;
+            # the output callback drains the buffer and feeds it to the echo canceller.
+            for sentence in split_sentences(text):
                 if self._interrupt.is_set():
-                    sd.stop()
                     break
-                await asyncio.sleep(0.02)
+                chunks = await loop.run_in_executor(
+                    None, lambda s=sentence: list(self._tts.synthesize(s, voice=self._voice, language=language))
+                )
+                for src_rate, pcm in chunks:
+                    if self._interrupt.is_set():
+                        break
+                    if src_rate != VAD_SAMPLE_RATE:
+                        pcm = np.clip(
+                            resample(pcm.astype(np.float32), int(len(pcm) * VAD_SAMPLE_RATE / src_rate)),
+                            -32768, 32767,
+                        ).astype(np.int16)
+                    with self._play_lock:
+                        self._play_buf.append(pcm)
+            # Wait for playback to drain (or a barge-in to cut it short).
+            while not self._interrupt.is_set():
+                with self._play_lock:
+                    pending = sum(len(c) for c in self._play_buf)
+                if pending == 0:
+                    break
+                await asyncio.sleep(0.03)
+        finally:
             if self._interrupt.is_set():
-                break
+                with self._play_lock:
+                    self._play_buf.clear()
+            self._tts_active = False
 
     async def run_live(self, input_device: int | None) -> None:
+        """Full-duplex loop: paired in/out streams share the AEC; barge-in is live.
+
+        The realtime callbacks only do fast work (buffer copy + WebRTC AEC). The
+        (heavier) VAD runs in an async task off the audio threads. On Mac the mic and
+        speakers are separate devices, so two streams (not one duplex) are used.
+        """
         import sounddevice as sd
 
         loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[NDArray[np.int16]] = asyncio.Queue()
+        utt_q: asyncio.Queue[NDArray[np.int16]] = asyncio.Queue()
+        mic_q: asyncio.Queue[NDArray[np.int16]] = asyncio.Queue()
 
-        def callback(indata, frames, time_info, status):  # runs on the audio thread
+        def out_callback(outdata, frames, time_info, status):  # speaker thread
+            out = np.zeros(frames, dtype=np.int16)
+            with self._play_lock:
+                filled = 0
+                while filled < frames and self._play_buf:
+                    chunk = self._play_buf[0]
+                    take = min(len(chunk), frames - filled)
+                    out[filled : filled + take] = chunk[:take]
+                    if take == len(chunk):
+                        self._play_buf.popleft()
+                    else:
+                        self._play_buf[0] = chunk[take:]
+                    filled += take
+            outdata[:, 0] = out
+            if self._aec is not None:
+                with self._aec_lock:
+                    self._aec.play_reference(out)  # far-end reference for the canceller
+
+        def in_callback(indata, frames, time_info, status):  # mic thread
             if status:
                 logger.debug("audio status: %s", status)
-            pcm = indata[:, 0].copy()
-            if self._speaking:
-                if self._barge_vad is not None:  # barge-in: user talking over playback
-                    self._barge_vad.feed(pcm)
-                    if self._barge_vad.in_speech and not self._interrupt.is_set():
-                        self._interrupt.set()
-                        print("   ✋ (barge-in)")
-                return  # half-duplex otherwise
-            for utt in self._vad.feed(pcm):
-                loop.call_soon_threadsafe(queue.put_nowait, utt)
+            mic = indata[:, 0].copy()
+            if self._aec is not None:
+                with self._aec_lock:
+                    mic = self._aec.clean(mic)  # subtract Reachy's echo
+            if len(mic):
+                loop.call_soon_threadsafe(mic_q.put_nowait, mic)
+
+        async def process_mic() -> None:
+            while True:
+                mic = await mic_q.get()
+                if self._tts_active:  # listening for barge-in over the (echo-cancelled) playback
+                    if self._barge_vad is not None:
+                        self._barge_vad.feed(mic)
+                        if self._barge_vad.in_speech and not self._interrupt.is_set():
+                            self._interrupt.set()
+                            print("   ✋ (barge-in)")
+                elif not self._speaking:
+                    for utt in self._vad.feed(mic):
+                        utt_q.put_nowait(utt)
 
         if self._camera is not None:
             self._camera.start()
             print("👁️  Vision on" + (" (always)" if self._always_vision else " (when you ask to look)"))
 
         print("🎙️  Listening… speak to Reachy Mini. Press Ctrl+C to stop.\n")
+        mic_task = asyncio.create_task(process_mic())
         try:
-            with sd.InputStream(
+            with sd.OutputStream(
                 samplerate=VAD_SAMPLE_RATE, channels=1, dtype="int16",
-                blocksize=FRAME_SAMPLES, callback=callback, device=input_device,
+                blocksize=FRAME_SAMPLES, callback=out_callback,
+            ), sd.InputStream(
+                samplerate=VAD_SAMPLE_RATE, channels=1, dtype="int16",
+                blocksize=FRAME_SAMPLES, callback=in_callback, device=input_device,
             ):
                 while True:
-                    utterance = await queue.get()
+                    utterance = await utt_q.get()
                     await self.handle_utterance(utterance)
         finally:
+            mic_task.cancel()
             if self._camera is not None:
                 self._camera.stop()
 

@@ -224,6 +224,13 @@ class Config:
     VAD_MIN_SPEECH_MS = _env_int("VAD_MIN_SPEECH_MS", 200)
     VAD_MAX_UTTERANCE_MS = _env_int("VAD_MAX_UTTERANCE_MS", 15000)
 
+    # Barge-in: let the user interrupt Reachy mid-reply. A strict VAD runs *during*
+    # playback; once it sees BARGE_IN_SPEECH_MS of sustained speech it flushes queued
+    # audio and re-listens. Needs echo control — on open speakers the mic also hears
+    # Reachy and can self-interrupt, so use headphones (or AEC). Off by default.
+    BARGE_IN = _env_flag("BARGE_IN", default=False)
+    BARGE_IN_SPEECH_MS = _env_int("BARGE_IN_SPEECH_MS", 400)
+
     logger.debug(f"Custom Profile: {REACHY_MINI_CUSTOM_PROFILE}")
 
     def __init__(self) -> None:

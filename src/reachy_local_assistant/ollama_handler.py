@@ -86,6 +86,8 @@ class OllamaConversationHandler(AsyncStreamHandler):
 
         self._speaking = False  # True while synthesizing/playing a reply (half-duplex gate)
         self._stop = asyncio.Event()
+        self._interrupt = asyncio.Event()  # set when the user barges in mid-reply
+        self._barge_vad: Optional[VadSegmenter] = None  # strict VAD for barge-in (built if BARGE_IN)
         self.last_activity_time = asyncio.get_event_loop().time()
 
     def copy(self) -> "OllamaConversationHandler":
@@ -106,6 +108,14 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._chat = OllamaChat(config.OLLAMA_MODEL, config.OLLAMA_URL, self.deps, instructions)
         self._tts = make_tts()
         self._voice = get_session_voice()
+        if config.BARGE_IN:
+            self._barge_vad = VadSegmenter(
+                aggressiveness=3,  # strict — resist playback echo
+                silence_ms=200,
+                min_speech_ms=config.BARGE_IN_SPEECH_MS,
+                max_utterance_ms=config.VAD_MAX_UTTERANCE_MS,
+            )
+            logger.info("Barge-in enabled (sustained speech >= %d ms)", config.BARGE_IN_SPEECH_MS)
 
         try:
             count = await register_mcp_tools()
@@ -126,6 +136,9 @@ class OllamaConversationHandler(AsyncStreamHandler):
 
     async def _handle_turn(self, utterance: NDArray[np.int16]) -> None:
         assert self._stt and self._chat
+        self._interrupt.clear()
+        if self._barge_vad is not None:
+            self._barge_vad.reset()
         self._speaking = True  # gate the mic for the whole turn (half-duplex)
         self._set_listening(False)
         try:
@@ -178,12 +191,12 @@ class OllamaConversationHandler(AsyncStreamHandler):
         total_samples = 0
         play_start: float | None = None
         for sentence in split_sentences(text):
-            if self._stop.is_set():
+            if self._stop.is_set() or self._interrupt.is_set():
                 break
             # synthesis is blocking (CPU) or network-bound — keep it off the event loop
             chunks = await loop.run_in_executor(None, self._synthesize, sentence, language)
             for src_rate, pcm in chunks:
-                if self._stop.is_set():
+                if self._stop.is_set() or self._interrupt.is_set():
                     break
                 pcm24 = self._resample_int16(pcm, src_rate, WOBBLER_SAMPLE_RATE)
                 if play_start is None:
@@ -200,7 +213,12 @@ class OllamaConversationHandler(AsyncStreamHandler):
         # don't over-hold (releasing early would let the mic capture Reachy's voice).
         duration = total_samples / WOBBLER_SAMPLE_RATE
         remaining = max(0.0, (play_start + duration) - loop.time())
-        await asyncio.sleep(remaining + PLAYBACK_TAIL_S)
+        try:
+            # Wait out the real playback time, but cut it short if the user barges in.
+            await asyncio.wait_for(self._interrupt.wait(), timeout=remaining + PLAYBACK_TAIL_S)
+            self._flush_output()  # barged in during playback — drop the rest
+        except asyncio.TimeoutError:
+            pass  # played to completion
 
     def _synthesize(self, text: str, language: str | None = None) -> list[Tuple[int, NDArray[np.int16]]]:
         assert self._tts
@@ -209,27 +227,50 @@ class OllamaConversationHandler(AsyncStreamHandler):
     # --- audio I/O (driven by LocalStream / fastrtc) ---------------------
 
     async def receive(self, frame: Tuple[int, NDArray[np.int16]]) -> None:
-        """Feed a mic frame into the VAD; enqueue completed utterances."""
+        """Feed a mic frame into the VAD; enqueue completed utterances.
+
+        While Reachy speaks the mic is normally gated (half-duplex). With BARGE_IN
+        on, a strict VAD watches for the user talking over playback and interrupts
+        (flush queued audio, stop the reply, re-listen).
+        """
+        sample_rate, audio = frame
+        audio = self._to_mono(audio)
+        pcm16 = self._resample_int16(audio, sample_rate, VAD_SAMPLE_RATE)
+
         if self._speaking:
-            return  # half-duplex: ignore the mic while Reachy talks (Phase 1)
+            if self._barge_vad is None:
+                return  # half-duplex: ignore the mic while Reachy talks
+            self._barge_vad.feed(pcm16)
+            if self._barge_vad.in_speech and not self._interrupt.is_set():
+                logger.info("Barge-in: user spoke over playback — interrupting reply")
+                self._interrupt.set()
+                self._flush_output()
+            return
 
         # Live VAD tuning: rebuild the segmenter if the config values changed.
         if (config.VAD_AGGRESSIVENESS, config.VAD_SILENCE_MS) != (self._vad_aggr, self._vad_silence):
             self._vad_aggr = config.VAD_AGGRESSIVENESS
             self._vad_silence = config.VAD_SILENCE_MS
             self._vad = VadSegmenter(
-            aggressiveness=self._vad_aggr,
-            silence_ms=self._vad_silence,
-            min_speech_ms=config.VAD_MIN_SPEECH_MS,
-            max_utterance_ms=config.VAD_MAX_UTTERANCE_MS,
-        )
+                aggressiveness=self._vad_aggr,
+                silence_ms=self._vad_silence,
+                min_speech_ms=config.VAD_MIN_SPEECH_MS,
+                max_utterance_ms=config.VAD_MAX_UTTERANCE_MS,
+            )
             logger.info("VAD updated: aggressiveness=%d silence_ms=%d", self._vad_aggr, self._vad_silence)
 
-        sample_rate, audio = frame
-        audio = self._to_mono(audio)
-        pcm16 = self._resample_int16(audio, sample_rate, VAD_SAMPLE_RATE)
         for utterance in self._vad.feed(pcm16):
             await self._utterances.put(utterance)
+
+    def _flush_output(self) -> None:
+        """Drop queued output audio (and reset the wobbler) so playback stops fast."""
+        while not self.output_queue.empty():
+            try:
+                self.output_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        if self.deps.head_wobbler is not None:
+            self.deps.head_wobbler.reset()
 
     async def emit(self) -> Tuple[int, NDArray[np.int16]] | AdditionalOutputs | None:
         """Return the next output item (audio chunk or transcript)."""

@@ -16,6 +16,7 @@ adds AEC + barge-in (see ``audio/aec.py``).
 """
 
 from __future__ import annotations
+import math
 import base64
 import asyncio
 import logging
@@ -92,6 +93,10 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._interrupt = asyncio.Event()  # set when the user barges in mid-reply
         self._barge_vad: Optional[VadSegmenter] = None  # strict VAD for barge-in (built if BARGE_IN)
         self._aec: Any = None  # EchoCanceller when AEC enabled (cleans mic of Reachy's voice)
+        # AEC debug meter (AEC_DEBUG): per-turn echo/residual energy through the live path.
+        self._aec_debug = config.AEC_DEBUG
+        self._erle_pre_sq = self._erle_post_sq = 0.0
+        self._erle_pre_n = self._erle_post_n = 0
         self.last_activity_time = asyncio.get_event_loop().time()
 
     def copy(self) -> "OllamaConversationHandler":
@@ -177,6 +182,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
             logger.exception("Turn failed: %s", exc)
         finally:
             self._speaking = False
+            self._log_aec_debug()  # report this turn's echo cancellation (AEC_DEBUG)
             self._vad.reset()  # drop any in-progress utterance captured at the edges
             # Drop any utterances that slipped into the queue during the turn
             # (e.g. echo captured in the brief gate transitions).
@@ -245,7 +251,13 @@ class OllamaConversationHandler(AsyncStreamHandler):
         audio = to_mono(audio)
         pcm16 = resample_int16(audio, sample_rate, VAD_SAMPLE_RATE)
         if self._aec is not None:
+            if self._aec_debug and self._speaking:  # echo energy before cancellation
+                self._erle_pre_sq += float(np.sum(pcm16.astype(np.float64) ** 2))
+                self._erle_pre_n += len(pcm16)
             pcm16 = self._aec.clean(pcm16)  # remove Reachy's echo (10 ms-aligned; may buffer)
+            if self._aec_debug and self._speaking and len(pcm16):  # residual after cancellation
+                self._erle_post_sq += float(np.sum(pcm16.astype(np.float64) ** 2))
+                self._erle_post_n += len(pcm16)
             if len(pcm16) == 0:
                 return
 
@@ -275,6 +287,20 @@ class OllamaConversationHandler(AsyncStreamHandler):
 
         for utterance in self._vad.feed(pcm16):
             await self._utterances.put(utterance)
+
+    def _log_aec_debug(self) -> None:
+        """Log this turn's echo / residual / ERLE (AEC_DEBUG) and reset the meter."""
+        if self._aec_debug and self._erle_pre_n and self._erle_post_n:
+            pre = self._erle_pre_sq / self._erle_pre_n
+            post = self._erle_post_sq / self._erle_post_n
+            echo_db = 10 * math.log10(pre / 32768**2 + 1e-12)
+            res_db = 10 * math.log10(post / 32768**2 + 1e-12)
+            logger.info(
+                "AEC turn: echo=%.0f dBFS  residual=%.0f dBFS  ERLE=%.1f dB  (delay=%d ms)",
+                echo_db, res_db, echo_db - res_db, config.AEC_STREAM_DELAY_MS,
+            )
+        self._erle_pre_sq = self._erle_post_sq = 0.0
+        self._erle_pre_n = self._erle_post_n = 0
 
     def _flush_output(self) -> None:
         """Drop queued output audio (and reset the wobbler) so playback stops fast."""

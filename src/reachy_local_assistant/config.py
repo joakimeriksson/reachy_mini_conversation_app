@@ -242,6 +242,9 @@ class Config:
     # (output buffer + acoustic path + input buffer). The canceller needs this to align
     # what to subtract; measure it with `scripts/aec_diag.py`. 0 = let the APM estimate.
     AEC_STREAM_DELAY_MS = _env_int("AEC_STREAM_DELAY_MS", 0)
+    # Log per-turn echo / residual / ERLE through the live audio path (robot or Mac) so
+    # the AEC can be tuned where aec_diag.py can't reach (e.g. robot.media). Off by default.
+    AEC_DEBUG = _env_flag("AEC_DEBUG", default=False)
 
     logger.debug(f"Custom Profile: {REACHY_MINI_CUSTOM_PROFILE}")
 

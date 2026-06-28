@@ -7,13 +7,14 @@ conversation handler is backend-agnostic. Selected via ``TTS_BACKEND``.
 
 from __future__ import annotations
 import logging
-from typing import Any
+
+from reachy_local_assistant.audio.protocols import TtsBackend
 
 
 logger = logging.getLogger(__name__)
 
 
-def make_tts() -> Any:
+def make_tts() -> TtsBackend:
     """Construct the configured TTS backend (``piper`` or ``remote``)."""
     from reachy_local_assistant.config import config
 

@@ -20,6 +20,7 @@ from scipy.signal import resample
 from reachy_mini import ReachyMini
 from reachy_mini.media.media_manager import MediaBackend
 from reachy_local_assistant.config import LOCKED_PROFILE, config
+from reachy_local_assistant.audio.dsp import to_mono
 from reachy_local_assistant.ollama_handler import OllamaConversationHandler
 from reachy_local_assistant.headless_personality_ui import mount_personality_routes
 
@@ -406,19 +407,19 @@ class LocalStream:
         logger.info("User intervention: flushing player queue")
         backend = getattr(self._robot.media, "backend", None)
         audio = getattr(self._robot.media, "audio", None)
+
+        def _try_clear(name: str) -> bool:
+            fn = getattr(audio, name, None)
+            if callable(fn):
+                fn()
+                return True
+            return False
+
         if audio is not None:
-            if backend == MediaBackend.LOCAL and hasattr(audio, "clear_player") and callable(audio.clear_player):
-                audio.clear_player()
-            elif (
-                backend == MediaBackend.WEBRTC
-                and hasattr(audio, "clear_output_buffer")
-                and callable(audio.clear_output_buffer)
-            ):
-                audio.clear_output_buffer()
-            elif hasattr(audio, "clear_output_buffer") and callable(audio.clear_output_buffer):
-                audio.clear_output_buffer()
-            elif hasattr(audio, "clear_player") and callable(audio.clear_player):
-                audio.clear_player()
+            # Prefer the backend's native flush; fall back to whichever clear method exists.
+            preferred = "clear_player" if backend == MediaBackend.LOCAL else "clear_output_buffer"
+            fallback = "clear_output_buffer" if preferred == "clear_player" else "clear_player"
+            _try_clear(preferred) or _try_clear(fallback)
         self.handler.output_queue = asyncio.Queue()
 
     async def record_loop(self) -> None:
@@ -451,17 +452,8 @@ class LocalStream:
                 input_sample_rate, audio_data = handler_output
                 output_sample_rate = self._robot.media.get_output_audio_samplerate()
 
-                # Reshape if needed
-                if audio_data.ndim == 2:
-                    # Scipy channels last convention
-                    if audio_data.shape[1] > audio_data.shape[0]:
-                        audio_data = audio_data.T
-                    # Multiple channels -> Mono channel
-                    if audio_data.shape[1] > 1:
-                        audio_data = audio_data[:, 0]
-
-                # Cast if needed
-                audio_frame = audio_to_float32(audio_data)
+                # Mono + float32 for the robot media sink
+                audio_frame = audio_to_float32(to_mono(audio_data))
 
                 # Resample if needed
                 if input_sample_rate != output_sample_rate:

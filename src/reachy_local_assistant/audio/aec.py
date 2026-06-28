@@ -21,8 +21,14 @@ _FRAME = AEC_SAMPLE_RATE // 100  # 160 samples = 10 ms
 class EchoCanceller:
     """WebRTC echo canceller (near = mic, far = the audio we play)."""
 
-    def __init__(self) -> None:
-        """Build the APM with echo cancellation + noise suppression enabled."""
+    def __init__(self, stream_delay_ms: int = 0) -> None:
+        """Build the APM with echo cancellation + noise suppression enabled.
+
+        *stream_delay_ms* is the delay between playing a sample (far reference) and its
+        echo arriving at the mic (near) — output buffer + acoustic path + input buffer.
+        With two independent streams the canceller cannot infer this, so set it (measure
+        it with ``scripts/aec_diag.py``); 0 leaves it to the APM's own estimator.
+        """
         from livekit import rtc  # optional dep (aec extra)
 
         self._rtc = rtc
@@ -32,6 +38,9 @@ class EchoCanceller:
             high_pass_filter=True,
             auto_gain_control=False,
         )
+        self._stream_delay_ms = max(0, int(stream_delay_ms))
+        if self._stream_delay_ms:
+            self._apm.set_stream_delay_ms(self._stream_delay_ms)
         self._near: NDArray[np.int16] = np.zeros(0, dtype=np.int16)
         self._far: NDArray[np.int16] = np.zeros(0, dtype=np.int16)
 
@@ -49,6 +58,8 @@ class EchoCanceller:
         while len(self._near) >= _FRAME:
             frame, self._near = self._near[:_FRAME].copy(), self._near[_FRAME:]
             af = self._rtc.AudioFrame(frame.tobytes(), AEC_SAMPLE_RATE, 1, _FRAME)
+            if self._stream_delay_ms:
+                self._apm.set_stream_delay_ms(self._stream_delay_ms)
             self._apm.process_stream(af)  # cleans af.data in place
             out.append(np.frombuffer(af.data, dtype=np.int16).copy())
         return np.concatenate(out) if out else np.zeros(0, dtype=np.int16)

@@ -175,8 +175,8 @@ class LocalVoiceChat:
             try:
                 from reachy_local_assistant.audio.aec import EchoCanceller
 
-                self._aec = EchoCanceller()
-                print("🎚️  Echo cancellation on")
+                self._aec = EchoCanceller(stream_delay_ms=config.AEC_STREAM_DELAY_MS)
+                print(f"🎚️  Echo cancellation on (stream delay {config.AEC_STREAM_DELAY_MS} ms)")
             except Exception as exc:
                 print(f"   (AEC unavailable: {exc} — on speakers barge-in will hear itself)")
 

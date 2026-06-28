@@ -126,8 +126,8 @@ class OllamaConversationHandler(AsyncStreamHandler):
             try:
                 from reachy_local_assistant.audio.aec import EchoCanceller
 
-                self._aec = EchoCanceller()
-                logger.info("AEC enabled (echo cancellation on the mic)")
+                self._aec = EchoCanceller(stream_delay_ms=config.AEC_STREAM_DELAY_MS)
+                logger.info("AEC enabled (echo cancellation; stream delay %d ms)", config.AEC_STREAM_DELAY_MS)
             except Exception as exc:  # missing livekit / init failure shouldn't kill the app
                 logger.warning("AEC requested but unavailable (%s); install the 'aec' extra", exc)
 

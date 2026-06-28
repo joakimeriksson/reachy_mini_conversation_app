@@ -238,6 +238,10 @@ class Config:
     # Reachy's own voice from the mic so barge-in works on open speakers, not just
     # headphones. Needs BARGE_IN to matter. Off by default.
     AEC = _env_flag("AEC", default=False)
+    # Echo-path delay (ms): time from playing a sample to its echo reaching the mic
+    # (output buffer + acoustic path + input buffer). The canceller needs this to align
+    # what to subtract; measure it with `scripts/aec_diag.py`. 0 = let the APM estimate.
+    AEC_STREAM_DELAY_MS = _env_int("AEC_STREAM_DELAY_MS", 0)
 
     logger.debug(f"Custom Profile: {REACHY_MINI_CUSTOM_PROFILE}")
 

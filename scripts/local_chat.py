@@ -39,9 +39,9 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.signal import resample
 
 from reachy_local_assistant.prompts import get_session_voice
+from reachy_local_assistant.audio.dsp import resample_int16, pcm16_to_wav_bytes
 from reachy_local_assistant.audio.tts import make_tts
 from reachy_local_assistant.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT
@@ -201,8 +201,6 @@ class LocalVoiceChat:
         try:
             lang: str | None
             if self._direct_audio:
-                from reachy_local_assistant.audio.gemma_stt import pcm16_to_wav_bytes
-
                 print("\n🧑  You:    🎤 …")
                 reply = await self._chat.respond("", audio=pcm16_to_wav_bytes(utterance, VAD_SAMPLE_RATE))
                 lang = None
@@ -221,8 +219,6 @@ class LocalVoiceChat:
             self._vad.reset()
 
     async def _play(self, text: str, language: str | None = None) -> None:
-        from scipy.signal import resample
-
         loop = asyncio.get_running_loop()
         self._interrupt.clear()
         if self._barge_vad is not None:
@@ -241,11 +237,7 @@ class LocalVoiceChat:
                 for src_rate, pcm in chunks:
                     if self._interrupt.is_set():
                         break
-                    if src_rate != VAD_SAMPLE_RATE:
-                        pcm = np.clip(
-                            resample(pcm.astype(np.float32), int(len(pcm) * VAD_SAMPLE_RATE / src_rate)),
-                            -32768, 32767,
-                        ).astype(np.int16)
+                    pcm = resample_int16(pcm, src_rate, VAD_SAMPLE_RATE)
                     with self._play_lock:
                         self._play_buf.append(pcm)
             # Wait for playback to drain (or a barge-in to cut it short).
@@ -349,15 +341,10 @@ class LocalVoiceChat:
             return 1
         sr = synth[0][0]
         spoken = np.concatenate([c[1] for c in synth])
-        pcm16 = np.clip(
-            resample(spoken.astype(np.float32), int(len(spoken) * VAD_SAMPLE_RATE / sr)),
-            -32768, 32767,
-        ).astype(np.int16)
+        pcm16 = resample_int16(spoken, sr, VAD_SAMPLE_RATE)
 
         lang: str | None
         if self._direct_audio:
-            from reachy_local_assistant.audio.gemma_stt import pcm16_to_wav_bytes
-
             print("[self-test] asking the model directly from audio (one call)…")
             reply = await self._chat.respond("", audio=pcm16_to_wav_bytes(pcm16, VAD_SAMPLE_RATE))
             lang = None

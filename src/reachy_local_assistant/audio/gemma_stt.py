@@ -10,7 +10,6 @@ off the audio thread.
 """
 
 from __future__ import annotations
-import io
 import re
 import json
 import logging
@@ -19,17 +18,10 @@ from typing import Tuple
 import numpy as np
 from numpy.typing import NDArray
 
+from reachy_local_assistant.audio.dsp import pcm16_to_wav_bytes
+
 
 logger = logging.getLogger(__name__)
-
-
-def pcm16_to_wav_bytes(audio: NDArray[np.int16], sample_rate: int = 16000) -> bytes:
-    """Wrap a mono int16 PCM utterance as WAV bytes (for Ollama's ``images`` field)."""
-    import soundfile as sf
-
-    buf = io.BytesIO()
-    sf.write(buf, np.asarray(audio).reshape(-1), sample_rate, format="WAV", subtype="PCM_16")
-    return buf.getvalue()
 
 # Ask for strict JSON so we can recover both text and language. Gemma is an LLM,
 # so this is reliable; we still parse defensively.

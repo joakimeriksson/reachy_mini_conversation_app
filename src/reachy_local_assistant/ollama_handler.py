@@ -24,14 +24,14 @@ from typing import Any, Tuple, Optional
 import numpy as np
 from fastrtc import AdditionalOutputs, AsyncStreamHandler, wait_for_item
 from numpy.typing import NDArray
-from scipy.signal import resample
 
 from reachy_local_assistant.config import config, set_custom_profile
 from reachy_local_assistant.prompts import get_session_voice, get_session_instructions
+from reachy_local_assistant.audio.dsp import to_mono, resample_int16, pcm16_to_wav_bytes
 from reachy_local_assistant.audio.tts import make_tts
 from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.mcp_client import shutdown_mcp, register_mcp_tools
-from reachy_local_assistant.audio.gemma_stt import GemmaSTT, pcm16_to_wav_bytes
+from reachy_local_assistant.audio.gemma_stt import GemmaSTT
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
 from reachy_local_assistant.audio.text_chunk import split_sentences
 from reachy_local_assistant.tools.core_tools import ToolDependencies
@@ -211,7 +211,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
             for src_rate, pcm in chunks:
                 if self._stop.is_set() or self._interrupt.is_set():
                     break
-                pcm24 = self._resample_int16(pcm, src_rate, WOBBLER_SAMPLE_RATE)
+                pcm24 = resample_int16(pcm, src_rate, WOBBLER_SAMPLE_RATE)
                 if play_start is None:
                     play_start = loop.time()  # the first audio is about to play
                 total_samples += len(pcm24)
@@ -247,8 +247,8 @@ class OllamaConversationHandler(AsyncStreamHandler):
         (flush queued audio, stop the reply, re-listen).
         """
         sample_rate, audio = frame
-        audio = self._to_mono(audio)
-        pcm16 = self._resample_int16(audio, sample_rate, VAD_SAMPLE_RATE)
+        audio = to_mono(audio)
+        pcm16 = resample_int16(audio, sample_rate, VAD_SAMPLE_RATE)
         if self._aec is not None:
             pcm16 = self._aec.clean(pcm16)  # remove Reachy's echo (10 ms-aligned; may buffer)
             if len(pcm16) == 0:
@@ -300,7 +300,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         item = await wait_for_item(self.output_queue)
         if self._aec is not None and isinstance(item, tuple):
             rate, pcm = item
-            self._aec.play_reference(self._resample_int16(pcm, rate, VAD_SAMPLE_RATE))
+            self._aec.play_reference(resample_int16(pcm, rate, VAD_SAMPLE_RATE))
         return item  # type: ignore[no-any-return]
 
     async def shutdown(self) -> None:
@@ -341,27 +341,3 @@ class OllamaConversationHandler(AsyncStreamHandler):
             except Exception as exc:
                 logger.debug("set_listening failed: %s", exc)
 
-    @staticmethod
-    def _to_mono(audio: NDArray[np.int16]) -> NDArray[np.int16]:
-        if audio.ndim == 2:
-            if audio.shape[1] > audio.shape[0]:  # scipy channels-last convention
-                audio = audio.T
-            if audio.shape[1] > 1:
-                audio = audio[:, 0]
-        return audio.reshape(-1)
-
-    @staticmethod
-    def _resample_int16(audio: NDArray[Any], src_rate: int, dst_rate: int) -> NDArray[np.int16]:
-        audio = np.asarray(audio)
-        if audio.dtype != np.int16:
-            if np.issubdtype(audio.dtype, np.floating):
-                audio = np.clip(audio * 32768.0, -32768, 32767).astype(np.int16)
-            else:
-                audio = audio.astype(np.int16)
-        if src_rate == dst_rate:
-            return audio
-        n = int(len(audio) * dst_rate / src_rate)
-        if n <= 0:
-            return np.empty(0, dtype=np.int16)
-        resampled = resample(audio.astype(np.float32), n)
-        return np.clip(resampled, -32768, 32767).astype(np.int16)  # type: ignore[no-any-return]

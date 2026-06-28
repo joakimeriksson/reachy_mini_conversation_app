@@ -46,7 +46,8 @@ from reachy_local_assistant.audio.tts import make_tts
 from reachy_local_assistant.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
-from reachy_local_assistant.audio.text_chunk import split_sentences
+from reachy_local_assistant.conversation.turn import generate_reply
+from reachy_local_assistant.conversation.speech import stream_sentences
 
 
 logger = logging.getLogger("local_chat")
@@ -199,21 +200,22 @@ class LocalVoiceChat:
         """One full turn: STT → LLM → TTS → speaker."""
         self._speaking = True
         try:
-            lang: str | None
-            if self._direct_audio:
-                print("\n🧑  You:    🎤 …")
-                reply = await self._chat.respond("", audio=pcm16_to_wav_bytes(utterance, VAD_SAMPLE_RATE))
-                lang = None
-            else:
-                text, lang = await self._stt.transcribe(utterance)
-                if not text.strip():
-                    return
-                print(f"\n🧑  You:    {text}")
-                image = self._maybe_capture(text)
-                reply = await self._chat.respond(text, image=image)
-            print(f"🤖  Reachy: {reply}\n")
-            if reply.strip():
-                await self._play(reply, lang)
+
+            async def _show_user(text: str) -> None:
+                print(f"\n🧑  You:    {text or '🎤 …'}")
+
+            turn = await generate_reply(
+                self._stt,
+                self._chat,
+                utterance,
+                direct_audio=self._direct_audio,
+                sample_rate=VAD_SAMPLE_RATE,
+                on_user_text=_show_user,
+                capture_image=self._maybe_capture,
+            )
+            if turn.reply:
+                print(f"🤖  Reachy: {turn.reply}\n")
+                await self._play(turn.reply, turn.language)
         finally:
             self._speaking = False
             self._vad.reset()
@@ -228,18 +230,13 @@ class LocalVoiceChat:
             # Stream sentence-by-sentence into the playback buffer (resampled to the
             # 16 kHz output stream). First sentence plays while the next synthesizes;
             # the output callback drains the buffer and feeds it to the echo canceller.
-            for sentence in split_sentences(text):
-                if self._interrupt.is_set():
-                    break
-                chunks = await loop.run_in_executor(
-                    None, lambda s=sentence: list(self._tts.synthesize(s, voice=self._voice, language=language))
-                )
-                for src_rate, pcm in chunks:
-                    if self._interrupt.is_set():
-                        break
-                    pcm = resample_int16(pcm, src_rate, VAD_SAMPLE_RATE)
-                    with self._play_lock:
-                        self._play_buf.append(pcm)
+            async for src_rate, pcm in stream_sentences(
+                self._tts, text, voice=self._voice, language=language,
+                should_stop=self._interrupt.is_set, loop=loop,
+            ):
+                pcm16 = resample_int16(pcm, src_rate, VAD_SAMPLE_RATE)
+                with self._play_lock:
+                    self._play_buf.append(pcm16)
             # Wait for playback to drain (or a barge-in to cut it short).
             while not self._interrupt.is_set():
                 with self._play_lock:
@@ -364,11 +361,11 @@ class LocalVoiceChat:
 
         out_parts = []
         out_sr = 24000
-        for sentence in split_sentences(reply):
-            cs = list(self._tts.synthesize(sentence, voice=self._voice, language=lang))
-            if cs:
-                out_sr = cs[0][0]
-                out_parts.append(np.concatenate([c[1] for c in cs]))
+        async for sr, pcm in stream_sentences(
+            self._tts, reply, voice=self._voice, language=lang, should_stop=lambda: False
+        ):
+            out_sr = sr
+            out_parts.append(pcm)
         out = np.concatenate(out_parts) if out_parts else np.zeros(0, dtype=np.int16)
         out_path = Path("/tmp/reachy_reply.wav")
         sf.write(out_path, out, out_sr, subtype="PCM_16")

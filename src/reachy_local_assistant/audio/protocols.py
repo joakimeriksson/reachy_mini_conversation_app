@@ -28,3 +28,13 @@ class SttBackend(Protocol):
     async def transcribe(self, audio: NDArray[np.int16]) -> Tuple[str, str]:
         """Return ``(text, language)`` for a 16 kHz int16 *audio* utterance."""
         ...
+
+
+class ChatBackend(Protocol):
+    """LLM chat: answer user text (optionally with an image or audio blob) as a string."""
+
+    async def respond(
+        self, user_text: str, image: Optional[bytes] = None, audio: Optional[bytes] = None
+    ) -> str:
+        """Return the assistant's reply to *user_text* (+ optional image / audio)."""
+        ...

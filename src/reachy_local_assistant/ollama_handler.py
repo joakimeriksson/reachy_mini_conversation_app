@@ -27,14 +27,15 @@ from numpy.typing import NDArray
 
 from reachy_local_assistant.config import config, set_custom_profile
 from reachy_local_assistant.prompts import get_session_voice, get_session_instructions
-from reachy_local_assistant.audio.dsp import to_mono, resample_int16, pcm16_to_wav_bytes
+from reachy_local_assistant.audio.dsp import to_mono, resample_int16
 from reachy_local_assistant.audio.tts import make_tts
 from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.mcp_client import shutdown_mcp, register_mcp_tools
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
-from reachy_local_assistant.audio.text_chunk import split_sentences
 from reachy_local_assistant.tools.core_tools import ToolDependencies
+from reachy_local_assistant.conversation.turn import generate_reply
+from reachy_local_assistant.conversation.speech import stream_sentences
 
 
 logger = logging.getLogger(__name__)
@@ -155,24 +156,23 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._speaking = True  # gate the mic for the whole turn (half-duplex)
         self._set_listening(False)
         try:
-            lang: str | None
-            if config.OLLAMA_DIRECT_AUDIO:
-                # One call: feed the speech straight to the chat model (no separate STT).
-                await self.output_queue.put(AdditionalOutputs({"role": "user", "content": "🎤 …"}))
-                reply = await self._chat.respond("", audio=pcm16_to_wav_bytes(utterance, VAD_SAMPLE_RATE))
-                lang = None  # no STT language; the TTS auto-detects from the reply
-            else:
-                text, lang = await self._stt.transcribe(utterance)
-                if not text:
-                    logger.debug("Empty transcription; ignoring utterance")
-                    return
-                await self.output_queue.put(AdditionalOutputs({"role": "user", "content": text}))
-                reply = await self._chat.respond(text)
 
+            async def _show_user(text: str) -> None:
+                # Show the user's turn (transcript, or a mic glyph in direct-audio mode).
+                await self.output_queue.put(AdditionalOutputs({"role": "user", "content": text or "🎤 …"}))
+
+            turn = await generate_reply(
+                self._stt,
+                self._chat,
+                utterance,
+                direct_audio=config.OLLAMA_DIRECT_AUDIO,
+                sample_rate=VAD_SAMPLE_RATE,
+                on_user_text=_show_user,
+            )
             self.last_activity_time = asyncio.get_event_loop().time()
-            if reply:
-                await self.output_queue.put(AdditionalOutputs({"role": "assistant", "content": reply}))
-                await self._speak(reply, lang)
+            if turn.reply:
+                await self.output_queue.put(AdditionalOutputs({"role": "assistant", "content": turn.reply}))
+                await self._speak(turn.reply, turn.language)
         except Exception as exc:
             logger.exception("Turn failed: %s", exc)
         finally:
@@ -203,21 +203,20 @@ class OllamaConversationHandler(AsyncStreamHandler):
         loop = asyncio.get_running_loop()
         total_samples = 0
         play_start: float | None = None
-        for sentence in split_sentences(text):
-            if self._stop.is_set() or self._interrupt.is_set():
-                break
-            # synthesis is blocking (CPU) or network-bound — keep it off the event loop
-            chunks = await loop.run_in_executor(None, self._synthesize, sentence, language)
-            for src_rate, pcm in chunks:
-                if self._stop.is_set() or self._interrupt.is_set():
-                    break
-                pcm24 = resample_int16(pcm, src_rate, WOBBLER_SAMPLE_RATE)
-                if play_start is None:
-                    play_start = loop.time()  # the first audio is about to play
-                total_samples += len(pcm24)
-                if self.deps.head_wobbler is not None:
-                    self.deps.head_wobbler.feed(base64.b64encode(pcm24.tobytes()).decode("utf-8"))
-                await self.output_queue.put((WOBBLER_SAMPLE_RATE, pcm24))
+
+        def should_stop() -> bool:
+            return self._stop.is_set() or self._interrupt.is_set()
+
+        async for src_rate, pcm in stream_sentences(
+            self._tts, text, voice=self._voice, language=language, should_stop=should_stop, loop=loop
+        ):
+            pcm24 = resample_int16(pcm, src_rate, WOBBLER_SAMPLE_RATE)
+            if play_start is None:
+                play_start = loop.time()  # the first audio is about to play
+            total_samples += len(pcm24)
+            if self.deps.head_wobbler is not None:
+                self.deps.head_wobbler.feed(base64.b64encode(pcm24.tobytes()).decode("utf-8"))
+            await self.output_queue.put((WOBBLER_SAMPLE_RATE, pcm24))
 
         if play_start is None:
             return
@@ -232,10 +231,6 @@ class OllamaConversationHandler(AsyncStreamHandler):
             self._flush_output()  # barged in during playback — drop the rest
         except asyncio.TimeoutError:
             pass  # played to completion
-
-    def _synthesize(self, text: str, language: str | None = None) -> list[Tuple[int, NDArray[np.int16]]]:
-        assert self._tts
-        return list(self._tts.synthesize(text, voice=self._voice, language=language))
 
     # --- audio I/O (driven by LocalStream / fastrtc) ---------------------
 

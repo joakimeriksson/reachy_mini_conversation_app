@@ -17,10 +17,14 @@ class TtsBackend(Protocol):
 
     def synthesize(
         self, text: str, voice: Optional[str] = None, language: Optional[str] = None
-    ) -> Iterator[Tuple[int, NDArray[np.int16]]]: ...
+    ) -> Iterator[Tuple[int, NDArray[np.int16]]]:
+        """Yield ``(sample_rate, int16 PCM)`` chunks for *text*."""
+        ...
 
 
 class SttBackend(Protocol):
     """Speech-to-text: transcribe a 16 kHz int16 utterance to ``(text, language)``."""
 
-    async def transcribe(self, audio: NDArray[np.int16]) -> Tuple[str, str]: ...
+    async def transcribe(self, audio: NDArray[np.int16]) -> Tuple[str, str]:
+        """Return ``(text, language)`` for a 16 kHz int16 *audio* utterance."""
+        ...

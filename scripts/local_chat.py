@@ -165,7 +165,7 @@ class LocalVoiceChat:
         if config.BARGE_IN:
             self._barge_vad = VadSegmenter(
                 aggressiveness=3, silence_ms=200, min_speech_ms=config.BARGE_IN_SPEECH_MS,
-                backend=config.VAD_BACKEND, threshold=config.VAD_THRESHOLD,
+                backend=config.VAD_BACKEND, threshold=config.BARGE_IN_THRESHOLD,
             )
         # Acoustic echo cancellation — required for barge-in on open speakers (else the
         # mic hears Reachy and self-interrupts). Shared by both audio callbacks via a lock.

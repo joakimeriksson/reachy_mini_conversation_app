@@ -127,7 +127,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
                 min_speech_ms=config.BARGE_IN_SPEECH_MS,
                 max_utterance_ms=config.VAD_MAX_UTTERANCE_MS,
                 backend=config.VAD_BACKEND,
-                threshold=config.VAD_THRESHOLD,
+                threshold=config.BARGE_IN_THRESHOLD,  # stricter than listening, resists noise/echo
             )
             logger.info("Barge-in enabled (sustained speech >= %d ms)", config.BARGE_IN_SPEECH_MS)
         if config.AEC:

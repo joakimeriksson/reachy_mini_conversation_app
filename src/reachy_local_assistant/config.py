@@ -233,7 +233,11 @@ class Config:
     # audio and re-listens. Needs echo control — on open speakers the mic also hears
     # Reachy and can self-interrupt, so use headphones (or AEC). Off by default.
     BARGE_IN = _env_flag("BARGE_IN", default=False)
-    BARGE_IN_SPEECH_MS = _env_int("BARGE_IN_SPEECH_MS", 400)
+    BARGE_IN_SPEECH_MS = _env_int("BARGE_IN_SPEECH_MS", 500)
+    # Barge-in is held to a STRICTER speech bar than normal listening so room noise /
+    # residual echo doesn't cut Reachy off — only a confident, sustained interruption
+    # does. Higher = less sensitive (silero speech-probability for the barge VAD).
+    BARGE_IN_THRESHOLD = float(os.getenv("BARGE_IN_THRESHOLD", "0.85"))
     # Acoustic echo cancellation (livekit WebRTC APM, the `aec` extra). Removes
     # Reachy's own voice from the mic so barge-in works on open speakers, not just
     # headphones. Needs BARGE_IN to matter. Off by default.

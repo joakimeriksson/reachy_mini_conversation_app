@@ -240,7 +240,8 @@ class Config:
     AEC = _env_flag("AEC", default=False)
     # Echo-path delay (ms): time from playing a sample to its echo reaching the mic
     # (output buffer + acoustic path + input buffer). The canceller needs this to align
-    # what to subtract; measure it with `scripts/aec_diag.py`. 0 = let the APM estimate.
+    # what to subtract. 0 (default) = auto-calibrate at startup with a chirp; a positive
+    # value pins it (e.g. from `scripts/aec_diag.py`) and skips calibration.
     AEC_STREAM_DELAY_MS = _env_int("AEC_STREAM_DELAY_MS", 0)
     # Log per-turn echo / residual / ERLE through the live audio path (robot or Mac) so
     # the AEC can be tuned where aec_diag.py can't reach (e.g. robot.media). Off by default.

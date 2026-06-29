@@ -44,6 +44,17 @@ class EchoCanceller:
         self._near: NDArray[np.int16] = np.zeros(0, dtype=np.int16)
         self._far: NDArray[np.int16] = np.zeros(0, dtype=np.int16)
 
+    def set_stream_delay_ms(self, delay_ms: int) -> None:
+        """Update the echo-path delay (e.g. after startup auto-calibration)."""
+        self._stream_delay_ms = max(0, int(delay_ms))
+        if self._stream_delay_ms:
+            self._apm.set_stream_delay_ms(self._stream_delay_ms)
+
+    @property
+    def stream_delay_ms(self) -> int:
+        """The configured echo-path delay in milliseconds."""
+        return self._stream_delay_ms
+
     def play_reference(self, pcm16: NDArray[np.int16]) -> None:
         """Feed far-end (played) 16 kHz audio so the canceller knows what to subtract."""
         self._far = np.concatenate([self._far, np.asarray(pcm16, dtype=np.int16).reshape(-1)])

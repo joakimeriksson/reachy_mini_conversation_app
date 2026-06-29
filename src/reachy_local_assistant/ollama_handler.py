@@ -97,6 +97,9 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._aec_debug = config.AEC_DEBUG
         self._erle_pre_sq = self._erle_post_sq = 0.0
         self._erle_pre_n = self._erle_post_n = 0
+        # Startup echo-delay auto-calibration (captures the mic while a probe plays).
+        self._calibrating = False
+        self._calib_near: list[NDArray[np.int16]] = []
         self.last_activity_time = asyncio.get_event_loop().time()
 
     def copy(self) -> "OllamaConversationHandler":
@@ -145,6 +148,10 @@ class OllamaConversationHandler(AsyncStreamHandler):
 
         self._set_listening(True)
         logger.info("Ollama conversation handler ready (model=%s)", config.OLLAMA_MODEL)
+
+        if self._aec is not None and config.AEC_STREAM_DELAY_MS == 0:
+            await asyncio.sleep(0.3)  # let the record/play loops spin up first
+            await self._calibrate_echo()
 
         while not self._stop.is_set():
             try:
@@ -250,6 +257,9 @@ class OllamaConversationHandler(AsyncStreamHandler):
         sample_rate, audio = frame
         audio = to_mono(audio)
         pcm16 = resample_int16(audio, sample_rate, VAD_SAMPLE_RATE)
+        if self._calibrating:  # startup probe: collect raw mic to time the echo
+            self._calib_near.append(pcm16.copy())
+            return
         if self._aec is not None:
             if self._aec_debug and self._speaking:  # echo energy before cancellation
                 self._erle_pre_sq += float(np.sum(pcm16.astype(np.float64) ** 2))
@@ -287,6 +297,37 @@ class OllamaConversationHandler(AsyncStreamHandler):
 
         for utterance in self._vad.feed(pcm16):
             await self._utterances.put(utterance)
+
+    async def _calibrate_echo(self) -> None:
+        """Play a short probe and time its echo in the mic to set the AEC stream delay.
+
+        Works through the robot's normal audio path (output_queue → player → robot.media →
+        speaker → mic → receive), so it measures the *actual* echo delay on the device.
+        """
+        from reachy_local_assistant.audio.echo_calib import CALIB_SAMPLE_RATE, make_probe, estimate_delay_ms
+
+        if self._aec is None:
+            return
+        probe = make_probe(1.0, CALIB_SAMPLE_RATE)
+        probe_i16 = np.clip(probe * 32768, -32768, 32767).astype(np.int16)
+        self._calib_near = []
+        self._calibrating = True
+        try:
+            await self.output_queue.put((CALIB_SAMPLE_RATE, probe_i16))  # plays via the normal path
+            await asyncio.sleep(2.0)  # let it play, echo, and be captured in receive()
+        finally:
+            self._calibrating = False
+        near = np.concatenate(self._calib_near) if self._calib_near else np.zeros(0, dtype=np.int16)
+        self._calib_near = []
+        if len(near) > len(probe):
+            delay = estimate_delay_ms(near, probe, CALIB_SAMPLE_RATE)
+            self._aec.set_stream_delay_ms(int(round(delay)))
+            logger.info("AEC auto-calibrated: echo delay = %.0f ms", delay)
+        else:
+            logger.warning(
+                "AEC calibration: too little mic captured (%d samples); keeping delay=%d ms",
+                len(near), self._aec.stream_delay_ms,
+            )
 
     def _log_aec_debug(self) -> None:
         """Log this turn's echo / residual / ERLE (AEC_DEBUG) and reset the meter."""

@@ -176,7 +176,8 @@ class LocalVoiceChat:
                 from reachy_local_assistant.audio.aec import EchoCanceller
 
                 self._aec = EchoCanceller(stream_delay_ms=config.AEC_STREAM_DELAY_MS)
-                print(f"🎚️  Echo cancellation on (stream delay {config.AEC_STREAM_DELAY_MS} ms)")
+                _mode = "auto-calibrating" if config.AEC_STREAM_DELAY_MS == 0 else f"{config.AEC_STREAM_DELAY_MS} ms"
+                print(f"🎚️  Echo cancellation on ({_mode})")
             except Exception as exc:
                 print(f"   (AEC unavailable: {exc} — on speakers barge-in will hear itself)")
 
@@ -258,6 +259,18 @@ class LocalVoiceChat:
         speakers are separate devices, so two streams (not one duplex) are used.
         """
         import sounddevice as sd
+
+        from reachy_local_assistant.config import config
+        from reachy_local_assistant.audio.echo_calib import measure_delay_via_sounddevice
+
+        # Auto-calibrate the echo delay with a startup chirp (unless overridden by
+        # AEC_STREAM_DELAY_MS). Runs before the live streams open so it has the device.
+        if self._aec is not None and config.AEC_STREAM_DELAY_MS == 0:
+            print("🎚️  Calibrating echo delay (chirp)…")
+            delay = measure_delay_via_sounddevice(1.0)
+            if delay is not None:
+                self._aec.set_stream_delay_ms(int(round(delay)))
+                print(f"🎚️  Echo delay: {delay:.0f} ms (auto-calibrated)")
 
         loop = asyncio.get_running_loop()
         utt_q: asyncio.Queue[NDArray[np.int16]] = asyncio.Queue()

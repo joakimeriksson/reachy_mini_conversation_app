@@ -304,6 +304,32 @@ class Config:
                 "Using built-in shared tools only."
             )
 
+    @classmethod
+    def reload(cls) -> None:
+        """Re-read env-driven backend settings after a late ``load_dotenv``.
+
+        The OLLAMA_/TTS_ class attributes are read at import — before the robot's
+        per-instance ``.env`` exists — so a saved OLLAMA_URL / TTS_URL / voice
+        would land in ``os.environ`` but never reach ``config`` (and ``make_tts()``
+        reads ``config.TTS_URL``). ``LocalStream.launch()`` calls this after loading
+        the instance .env so settings survive stop/start. Keep in sync with the
+        OLLAMA_/TTS_ defaults above.
+        """
+        cls.OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+        cls.OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:latest")
+        cls.OLLAMA_STT_MODEL = os.getenv("OLLAMA_STT_MODEL") or cls.OLLAMA_MODEL
+        cls.OLLAMA_TEMPERATURE = _env_opt_float("OLLAMA_TEMPERATURE")
+        cls.OLLAMA_NUM_CTX = _env_int("OLLAMA_NUM_CTX", 0)
+        cls.OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
+        cls.OLLAMA_THINK = _env_flag("OLLAMA_THINK", default=False)
+        cls.OLLAMA_DIRECT_AUDIO = _env_flag("OLLAMA_DIRECT_AUDIO", default=True)
+        cls.TTS_BACKEND = (os.getenv("TTS_BACKEND", "remote") or "remote").strip().lower()
+        cls.TTS_URL = os.getenv("TTS_URL", "")
+        cls.TTS_MODEL = os.getenv("TTS_MODEL", "tts-1")
+        cls.TTS_VOICE = os.getenv("TTS_VOICE", "Stina")
+        cls.TTS_FORMAT = os.getenv("TTS_FORMAT", "wav")
+        cls.TTS_API_KEY = os.getenv("TTS_API_KEY")
+
 
 config = Config()
 

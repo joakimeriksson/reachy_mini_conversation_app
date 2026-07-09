@@ -423,6 +423,10 @@ class LocalStream:
                 env_path = Path(self._instance_path) / ".env"
                 if env_path.exists():
                     load_dotenv(dotenv_path=str(env_path), override=True)
+                    # Re-read env-driven backend settings into config: they were read
+                    # at import, before this instance .env existed, so without this the
+                    # saved OLLAMA_URL / TTS_URL / voice are FORGOTTEN on every restart.
+                    config.reload()
                     # Update config with newly loaded values (profile, MCP, Ollama/Piper)
                     if LOCKED_PROFILE is None:
                         new_profile = os.getenv("REACHY_MINI_CUSTOM_PROFILE")

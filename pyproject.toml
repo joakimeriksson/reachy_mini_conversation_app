@@ -8,13 +8,13 @@ version = "0.4.2"
 authors = [{ name = "Pollen Robotics", email = "contact@pollen-robotics.com" }]
 description = ""
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"  # reachy-mini 1.9.0 dropped Python 3.10
 dependencies = [
     #Media
     "aiortc>=1.13.0",
     "fastrtc>=0.0.34",
     "gradio==5.50.1.dev1",
-    "huggingface-hub==1.3.0",
+    "huggingface-hub>=1.17.0",  # reachy-mini 1.9.0 requires >=1.17 (was pinned ==1.3.0)
     "pillow",  # JPEG encode for the camera tool (cv2-free, robot-safe)
 
     #Environment variables
@@ -32,7 +32,7 @@ dependencies = [
     #Reachy mini
     "reachy_mini_dances_library",
     "reachy_mini_toolbox",
-    "reachy-mini>=1.6.0",
+    "reachy-mini>=1.9.0",  # must match the robot's daemon (upgraded to 1.9.0); older clients drop the connection
 ]
 
 [project.optional-dependencies]
@@ -77,6 +77,9 @@ dev = [
 reachy-local-assistant = "reachy_local_assistant.main:main"
 
 [tool.uv]
+# reachy-mini 1.9.0 needs pydantic>=2.12.5, but gradio 5.50.1.dev1's metadata caps
+# it at <=2.12.3. Gradio tolerates the newer pydantic at runtime, so force it.
+override-dependencies = ["pydantic>=2.12.5,<3"]
 dependency-metadata = [
     # Upstream metadata currently marks `gstreamer-msvc-runtime` as unconditional.
     # It should only be required on Windows. Temp fix. Version unpinned so the

@@ -19,8 +19,6 @@ and vision run on **Ollama (Gemma)** and the voice on **Piper** — no cloud, no
 keys. A fork of Pollen's conversation app with the OpenAI Realtime backend
 **replaced by a local, on-prem stack**.
 
-![Reachy Mini Dance](docs/assets/reachy_mini_dance.gif)
-
 ## Table of contents
 - [Overview](#overview)
 - [Architecture](#architecture)

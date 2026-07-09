@@ -33,8 +33,10 @@ class RemoteTTS:
         timeout: float = 30.0,
     ) -> None:
         """Configure the remote /v1/audio/speech endpoint."""
-        if not url:
-            raise ValueError("RemoteTTS requires a TTS_URL (the /v1/audio/speech endpoint)")
+        # Tolerate an unset URL so the app can start UNCONFIGURED. The on-robot app
+        # ships without a .env, so TTS_URL is empty until the user sets it on the
+        # settings page — synthesize() then no-ops (logs a warning) instead of
+        # crashing start_up(), and applies live once the URL is saved.
         self._url = url
         self._model = model
         self._default_voice = default_voice
@@ -53,6 +55,9 @@ class RemoteTTS:
         """
         text = (text or "").strip()
         if not text:
+            return
+        if not self._url:
+            logger.warning("TTS not configured — set the voice-server URL (TTS_URL) on the settings page.")
             return
 
         import httpx

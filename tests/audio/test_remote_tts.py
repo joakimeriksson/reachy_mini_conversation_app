@@ -51,9 +51,12 @@ def _patch_httpx(monkeypatch, audio_bytes):
     monkeypatch.setattr(httpx, "Client", _FakeClient(audio_bytes))
 
 
-def test_requires_url():
-    with pytest.raises(ValueError):
-        RemoteTTS(url="", model="tts-1", default_voice="alloy")
+def test_empty_url_no_ops_instead_of_crashing():
+    # The app must start UNCONFIGURED (on-robot ships without a .env); an empty
+    # TTS_URL must not crash start_up() — synthesize() just yields nothing until
+    # the URL is set on the settings page.
+    tts = RemoteTTS(url="", model="tts-1", default_voice="Stina")
+    assert list(tts.synthesize("hej")) == []
 
 
 def test_empty_text_yields_nothing():

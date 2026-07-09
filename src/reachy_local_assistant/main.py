@@ -6,11 +6,9 @@ import time
 import asyncio
 import argparse
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
-import gradio as gr
 from fastapi import FastAPI
-from fastrtc import Stream
 
 from reachy_mini import ReachyMini, ReachyMiniApp
 from reachy_local_assistant.utils import (
@@ -19,12 +17,6 @@ from reachy_local_assistant.utils import (
     initialize_camera_and_vision,
     log_connection_troubleshooting,
 )
-
-
-def update_chatbot(chatbot: List[Dict[str, Any]], response: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Update the chatbot with AdditionalOutputs."""
-    chatbot.append(response)
-    return chatbot
 
 
 def main() -> None:
@@ -85,21 +77,6 @@ def run(
             logger.error("Please check your configuration and try again.")
             sys.exit(1)
 
-    # Auto-enable Gradio in simulation mode (both MuJoCo for daemon and mockup-sim for desktop app)
-    status = robot.client.get_status()
-    if isinstance(status, dict):
-        simulation_enabled = status.get("simulation_enabled", False)
-        mockup_sim_enabled = status.get("mockup_sim_enabled", False)
-    else:
-        simulation_enabled = getattr(status, "simulation_enabled", False)
-        mockup_sim_enabled = getattr(status, "mockup_sim_enabled", False)
-
-    is_simulation = simulation_enabled or mockup_sim_enabled
-
-    if is_simulation and not args.gradio:
-        logger.info("Simulation mode detected. Automatically enabling gradio flag.")
-        args.gradio = True
-
     camera_worker = initialize_camera_and_vision(args, robot)
 
     movement_manager = MovementManager(
@@ -116,63 +93,17 @@ def run(
         head_wobbler=head_wobbler,
         instance_path=instance_path,
     )
-    current_file_path = os.path.dirname(os.path.abspath(__file__))
-    logger.debug(f"Current file absolute path: {current_file_path}")
-    chatbot = gr.Chatbot(
-        type="messages",
-        resizable=True,
-        avatar_images=(
-            os.path.join(current_file_path, "images", "user_avatar.png"),
-            os.path.join(current_file_path, "images", "reachymini_avatar.png"),
-        ),
+    handler = OllamaConversationHandler(deps, gradio_mode=False, instance_path=instance_path)
+
+    # Headless only: audio flows through the robot's media pipeline and the settings
+    # UI is served by the FastAPI settings_app. gradio/fastrtc were removed — they
+    # capped pydantic below what reachy-mini requires (see stream_shim.py).
+    stream_manager = LocalStream(
+        handler,
+        robot,
+        settings_app=settings_app,
+        instance_path=instance_path,
     )
-    logger.debug(f"Chatbot avatar images: {chatbot.avatar_images}")
-
-    handler = OllamaConversationHandler(deps, gradio_mode=args.gradio, instance_path=instance_path)
-
-    stream_manager: gr.Blocks | LocalStream | None = None
-
-    if args.gradio:
-        from reachy_local_assistant.gradio_mcp import McpUI
-        from reachy_local_assistant.gradio_personality import PersonalityUI
-
-        mcp_ui = McpUI()
-        mcp_ui.create_components()
-
-        personality_ui = PersonalityUI()
-        personality_ui.create_components()
-
-        stream = Stream(
-            handler=handler,
-            mode="send-receive",
-            modality="audio",
-            additional_inputs=[
-                chatbot,
-                *mcp_ui.additional_inputs_ordered(),
-                *personality_ui.additional_inputs_ordered(),
-            ],
-            additional_outputs=[chatbot],
-            additional_outputs_handler=update_chatbot,
-            ui_args={"title": "Talk with Reachy Mini"},
-        )
-        stream_manager = stream.ui
-        if not settings_app:
-            app = FastAPI()
-        else:
-            app = settings_app
-
-        mcp_ui.wire_events(handler, stream_manager)
-        personality_ui.wire_events(handler, stream_manager)
-
-        app = gr.mount_gradio_app(app, stream.ui, path="/")
-    else:
-        # In headless mode, wire settings_app + instance_path to console LocalStream
-        stream_manager = LocalStream(
-            handler,
-            robot,
-            settings_app=settings_app,
-            instance_path=instance_path,
-        )
 
     # Each async service → its own thread/loop
     movement_manager.start()

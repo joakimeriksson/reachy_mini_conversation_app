@@ -25,7 +25,6 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
         help="Dev only: use the local machine's webcam (OpenCV) when robot.media has no camera",
     )
     parser.add_argument("--webcam-index", type=int, default=0, help="OpenCV webcam device index")
-    parser.add_argument("--gradio", default=False, action="store_true", help="Open gradio interface")
     parser.add_argument("--debug", default=False, action="store_true", help="Enable debug logging")
     parser.add_argument(
         "--robot-name",

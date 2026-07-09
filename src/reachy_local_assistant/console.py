@@ -14,7 +14,7 @@ import logging
 from typing import List, Optional
 from pathlib import Path
 
-from fastrtc import AdditionalOutputs, audio_to_float32
+from reachy_local_assistant.stream_shim import AdditionalOutputs, audio_to_float32
 from scipy.signal import resample
 
 from reachy_mini import ReachyMini

@@ -23,7 +23,7 @@ import logging
 from typing import Any, Tuple, Optional
 
 import numpy as np
-from fastrtc import AdditionalOutputs, AsyncStreamHandler, wait_for_item
+from reachy_local_assistant.stream_shim import AdditionalOutputs, AsyncStreamHandler, wait_for_item
 from numpy.typing import NDArray
 
 from reachy_local_assistant.config import config, set_custom_profile

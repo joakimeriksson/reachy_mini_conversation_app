@@ -388,6 +388,10 @@ class OllamaConversationHandler(AsyncStreamHandler):
             self._voice = get_session_voice()
             if self._chat is not None:
                 self._chat.set_system_prompt(instructions)
+                # Clear the conversation so the new personality/language takes full
+                # effect immediately — otherwise the old history's momentum (e.g.
+                # English) keeps dominating and the switch "doesn't seem to work".
+                self._chat.reset()
             return "Applied personality."
         except Exception as exc:
             logger.error("Failed to apply personality %r: %s", profile, exc)

@@ -61,6 +61,35 @@ async function connectMcp(serversText) {
   return await resp.json();
 }
 
+// ---------- Local backend (Ollama + TTS) API ----------
+
+async function getBackendsStatus() {
+  try {
+    const url = new URL("/backends/status", window.location.origin);
+    url.searchParams.set("_", Date.now().toString());
+    const resp = await fetchWithTimeout(url, {}, 3000);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function saveBackends(payload) {
+  const resp = await fetchWithTimeout(
+    new URL("/backends/save", window.location.origin),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    25000,
+  );
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.status || "save_failed");
+  return data;
+}
+
 // ---------- Personalities API ----------
 async function loadPersonality(name) {
   const url = new URL("/personalities/load", window.location.origin);
@@ -200,6 +229,41 @@ async function init() {
       mcpStatus.className = "status error";
       mcpChip.textContent = "Error";
       mcpChip.className = "chip";
+    }
+  });
+
+  // ---------- Local backend panel (Ollama + TTS URLs) ----------
+  const backendsPanel = document.getElementById("backends-panel");
+  const ollamaUrl = document.getElementById("ollama-url");
+  const ttsUrl = document.getElementById("tts-url");
+  const ttsVoice = document.getElementById("tts-voice");
+  const backendsSaveBtn = document.getElementById("backends-save-btn");
+  const backendsStatus = document.getElementById("backends-status");
+
+  show(backendsPanel, true);
+  try {
+    const st = await getBackendsStatus();
+    if (st) {
+      ollamaUrl.value = st.ollama_url || "";
+      ttsUrl.value = st.tts_url || "";
+      ttsVoice.value = st.tts_voice || "";
+    }
+  } catch (e) {}
+
+  backendsSaveBtn.addEventListener("click", async () => {
+    backendsStatus.textContent = "Saving...";
+    backendsStatus.className = "status";
+    try {
+      const res = await saveBackends({
+        ollama_url: ollamaUrl.value.trim(),
+        tts_url: ttsUrl.value.trim(),
+        tts_voice: ttsVoice.value.trim(),
+      });
+      backendsStatus.textContent = res.status || "Saved.";
+      backendsStatus.className = "status ok";
+    } catch (e) {
+      backendsStatus.textContent = `Failed: ${e.message}`;
+      backendsStatus.className = "status error";
     }
   });
 

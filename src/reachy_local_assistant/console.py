@@ -179,6 +179,38 @@ class LocalStream:
         except Exception as e:
             logger.warning("Failed to persist MCP_SERVER_URLS: %s", e)
 
+    def _persist_env_var(self, key: str, value: Optional[str], quote: bool = True) -> None:
+        """Persist a single ``KEY=value`` to the instance .env (replace/append/remove)."""
+        if not self._instance_path:
+            return
+        try:
+            env_path = Path(self._instance_path) / ".env"
+            lines = self._read_env_lines(env_path)
+            rendered = (f'{key}="{value}"' if quote else f"{key}={value}") if value else None
+            replaced = False
+            for i, ln in enumerate(list(lines)):
+                if ln.strip().startswith(f"{key}="):
+                    if value and rendered is not None:
+                        lines[i] = rendered
+                    else:
+                        lines.pop(i)
+                    replaced = True
+                    break
+            if value and rendered is not None and not replaced:
+                lines.append(rendered)
+            if not value and not env_path.exists():
+                return
+            env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            logger.info("Persisted %s to %s", key, env_path)
+            try:
+                from dotenv import load_dotenv
+
+                load_dotenv(dotenv_path=str(env_path), override=True)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.warning("Failed to persist %s: %s", key, e)
+
     def _read_persisted_personality(self) -> Optional[str]:
         """Read persisted startup personality from instance .env (if any)."""
         if not self._instance_path:
@@ -296,6 +328,67 @@ class LocalStream:
             except Exception as e:
                 logger.error("MCP connect failed: %s", e)
                 return JSONResponse({"error": str(e)}, status_code=500)
+
+        # ---------- Local backend URLs (Ollama + remote TTS voice server) ----------
+
+        @self._settings_app.get("/backends/status")
+        def _backends_status() -> JSONResponse:
+            return JSONResponse(
+                {
+                    "ollama_url": getattr(config, "OLLAMA_URL", "") or "",
+                    "ollama_model": getattr(config, "OLLAMA_MODEL", "") or "",
+                    "tts_backend": getattr(config, "TTS_BACKEND", "piper") or "piper",
+                    "tts_url": getattr(config, "TTS_URL", "") or "",
+                    "tts_voice": getattr(config, "TTS_VOICE", "") or "",
+                }
+            )
+
+        class BackendsPayload(BaseModel):
+            ollama_url: Optional[str] = None
+            tts_url: Optional[str] = None
+            tts_voice: Optional[str] = None
+
+        @self._settings_app.post("/backends/save")
+        def _backends_save(payload: BackendsPayload) -> JSONResponse:
+            ollama = (payload.ollama_url or "").strip()
+            tts_url = (payload.tts_url or "").strip()
+            tts_voice = (payload.tts_voice or "").strip()
+            changed = []
+            if ollama:
+                config.OLLAMA_URL = ollama
+                os.environ["OLLAMA_URL"] = ollama
+                self._persist_env_var("OLLAMA_URL", ollama)
+                changed.append("OLLAMA_URL")
+            # A TTS URL implies the remote voice-server backend.
+            if tts_url:
+                config.TTS_URL = tts_url
+                config.TTS_BACKEND = "remote"
+                os.environ["TTS_URL"] = tts_url
+                os.environ["TTS_BACKEND"] = "remote"
+                self._persist_env_var("TTS_URL", tts_url)
+                self._persist_env_var("TTS_BACKEND", "remote")
+                changed.append("TTS_URL")
+            if tts_voice:
+                config.TTS_VOICE = tts_voice
+                os.environ["TTS_VOICE"] = tts_voice
+                self._persist_env_var("TTS_VOICE", tts_voice)
+                changed.append("TTS_VOICE")
+            if not changed:
+                return JSONResponse({"ok": False, "status": "Nothing to save."}, status_code=400)
+            # Persisted to the instance .env and applied to the live config/env; the
+            # backends (Ollama client + TTS) are built at start_up(), so a restart of
+            # the app picks them up. Use the dashboard's "Restart" for the app.
+            status = f"Saved {', '.join(changed)} to the robot. Restart the app to apply."
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "status": status,
+                    "ollama_url": getattr(config, "OLLAMA_URL", ""),
+                    "tts_backend": getattr(config, "TTS_BACKEND", ""),
+                    "tts_url": getattr(config, "TTS_URL", ""),
+                    "tts_voice": getattr(config, "TTS_VOICE", ""),
+                }
+            )
 
         self._settings_initialized = True
 

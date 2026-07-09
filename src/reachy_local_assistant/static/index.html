@@ -48,6 +48,33 @@
         </div>
       </div>
 
+      <div id="backends-panel" class="panel hidden">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Local backend</p>
+            <h2>Ollama &amp; voice server</h2>
+          </div>
+          <span class="chip">Live</span>
+        </div>
+        <p class="muted">Point the robot at where your models run. Use the host machine's LAN IP (not <code>localhost</code>) when Ollama / the voice server run on another computer.</p>
+        <div class="row">
+          <label for="ollama-url">Ollama URL</label>
+          <input id="ollama-url" type="text" class="input-field" placeholder="http://192.168.1.10:11434" />
+        </div>
+        <div class="row">
+          <label for="tts-url">TTS voice-server URL</label>
+          <input id="tts-url" type="text" class="input-field" placeholder="http://192.168.1.10:8880/v1/audio/speech" />
+        </div>
+        <div class="row">
+          <label for="tts-voice">TTS voice</label>
+          <input id="tts-voice" type="text" class="input-field" placeholder="Stina" />
+        </div>
+        <div class="actions">
+          <button id="backends-save-btn">Save &amp; apply</button>
+          <p id="backends-status" class="status"></p>
+        </div>
+      </div>
+
       <div id="personality-panel" class="panel hidden">
         <div class="panel-heading">
           <div>

@@ -49,6 +49,12 @@ class GemmaSTT:
         self._sample_rate = sample_rate
         self._client = ollama.AsyncClient(host=host)
 
+    def set_host(self, host: str) -> None:
+        """Re-point the STT client at a new Ollama host."""
+        import ollama
+
+        self._client = ollama.AsyncClient(host=host)
+
     async def transcribe(self, audio: NDArray[np.int16]) -> Tuple[str, str]:
         """Transcribe a 16 kHz mono int16 utterance.
 

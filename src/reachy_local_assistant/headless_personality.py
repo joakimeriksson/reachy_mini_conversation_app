@@ -101,4 +101,4 @@ def _write_profile(name_s: str, instructions: str, tools_text: str, voice: str =
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / "instructions.txt").write_text(instructions.strip() + "\n", encoding="utf-8")
     (target_dir / "tools.txt").write_text((tools_text or "").strip() + "\n", encoding="utf-8")
-    (target_dir / "voice.txt").write_text((voice or config.PIPER_VOICE).strip() + "\n", encoding="utf-8")
+    (target_dir / "voice.txt").write_text((voice or config.TTS_VOICE).strip() + "\n", encoding="utf-8")

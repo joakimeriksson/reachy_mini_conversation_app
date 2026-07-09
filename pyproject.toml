@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reachy_local_assistant"
-version = "0.4.3"
+version = "0.4.4"
 authors = [{ name = "Pollen Robotics", email = "contact@pollen-robotics.com" }]
 description = ""
 readme = "README.md"
@@ -19,11 +19,9 @@ dependencies = [
     #Environment variables
     "python-dotenv",
 
-    #Local backend: Ollama (Gemma audio LLM/STT) + Piper TTS
+    #Local backend: Ollama (Gemma audio LLM/STT). TTS is the remote voice server.
     "ollama>=0.4",
-    "piper-tts>=1.2",
-    "onnxruntime>=1.20",
-    "webrtcvad-wheels>=2.0.14",  # maintained fork; plain webrtcvad needs removed pkg_resources on py3.12
+    "webrtcvad-wheels>=2.0.14",  # default VAD; maintained fork (plain webrtcvad needs removed pkg_resources on py3.12)
     "soundfile>=0.12",
     "httpx",  # remote TTS + MCP token fetch
     "fastmcp>=2.8",  # MCP client (core — external tool servers)
@@ -59,6 +57,11 @@ voiceserver = [
 # Acoustic echo cancellation for barge-in on open speakers (WebRTC APM via livekit).
 aec = [
   "livekit",
+]
+# Neural Silero VAD (VAD_BACKEND=silero). The default webrtc VAD needs no model;
+# onnxruntime is only required for this optional backend.
+silero = [
+  "onnxruntime>=1.20",
 ]
 
 [dependency-groups]

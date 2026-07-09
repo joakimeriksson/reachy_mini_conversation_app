@@ -67,6 +67,12 @@ class OllamaChat:
         self._system_prompt = system_prompt
         self._messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
+    def set_host(self, host: str) -> None:
+        """Re-point the chat client at a new Ollama host, keeping history + tools."""
+        import ollama
+
+        self._client = ollama.AsyncClient(host=host)
+
     def set_system_prompt(self, system_prompt: str) -> None:
         """Swap the system prompt (e.g. on personality change), keeping history."""
         self._system_prompt = system_prompt

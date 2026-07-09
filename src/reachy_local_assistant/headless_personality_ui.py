@@ -45,7 +45,7 @@ def mount_personality_routes(
         name: str
         instructions: str
         tools_text: str
-        voice: Optional[str] = config.PIPER_VOICE
+        voice: Optional[str] = config.TTS_VOICE
 
     class ApplyPayload(BaseModel):
         name: str
@@ -87,7 +87,7 @@ def mount_personality_routes(
     def _load(name: str) -> dict:  # type: ignore
         instr = read_instructions_for(name)
         tools_txt = ""
-        voice = config.PIPER_VOICE
+        voice = config.TTS_VOICE
         if name != DEFAULT_OPTION:
             pdir = resolve_profile_dir(name)
             tp = pdir / "tools.txt"
@@ -96,7 +96,7 @@ def mount_personality_routes(
             vf = pdir / "voice.txt"
             if vf.exists():
                 v = vf.read_text(encoding="utf-8").strip()
-                voice = v or config.PIPER_VOICE
+                voice = v or config.TTS_VOICE
         avail = available_tools_for(name)
         enabled = [ln.strip() for ln in tools_txt.splitlines() if ln.strip() and not ln.strip().startswith("#")]
         return {
@@ -117,7 +117,7 @@ def mount_personality_routes(
         name = str(raw.get("name", ""))
         instructions = str(raw.get("instructions", ""))
         tools_text = str(raw.get("tools_text", ""))
-        voice = str(raw.get("voice", config.PIPER_VOICE)) if raw.get("voice") is not None else config.PIPER_VOICE
+        voice = str(raw.get("voice", config.TTS_VOICE)) if raw.get("voice") is not None else config.TTS_VOICE
 
         name_s = _sanitize_name(name)
         if not name_s:
@@ -130,7 +130,7 @@ def mount_personality_routes(
                 len(instructions),
                 len(tools_text),
             )
-            _write_profile(name_s, instructions, tools_text, voice or config.PIPER_VOICE)
+            _write_profile(name_s, instructions, tools_text, voice or config.TTS_VOICE)
             value = f"user_personalities/{name_s}"
             choices = [DEFAULT_OPTION, *list_personalities()]
             return {"ok": True, "value": value, "choices": choices}
@@ -170,7 +170,7 @@ def mount_personality_routes(
             return JSONResponse({"ok": False, "error": "invalid_name"}, status_code=400)  # type: ignore
         instr = str(data.get("instructions") or "")
         tools = str(data.get("tools_text") or "")
-        v = str(data.get("voice") or config.PIPER_VOICE)
+        v = str(data.get("voice") or config.TTS_VOICE)
         try:
             logger.info(
                 "Headless save_raw: name=%r voice=%r instr_len=%d tools_len=%d", name_s, v, len(instr), len(tools)
@@ -183,7 +183,7 @@ def mount_personality_routes(
             return JSONResponse({"ok": False, "error": str(e)}, status_code=500)  # type: ignore
 
     @app.get("/personalities/save_raw")
-    async def _save_raw_get(name: str, instructions: str = "", tools_text: str = "", voice: str = config.PIPER_VOICE) -> dict:  # type: ignore
+    async def _save_raw_get(name: str, instructions: str = "", tools_text: str = "", voice: str = config.TTS_VOICE) -> dict:  # type: ignore
         name_s = _sanitize_name(name)
         if not name_s:
             return JSONResponse({"ok": False, "error": "invalid_name"}, status_code=400)  # type: ignore
@@ -195,7 +195,7 @@ def mount_personality_routes(
                 len(instructions),
                 len(tools_text),
             )
-            _write_profile(name_s, instructions, tools_text, voice or config.PIPER_VOICE)
+            _write_profile(name_s, instructions, tools_text, voice or config.TTS_VOICE)
             value = f"user_personalities/{name_s}"
             choices = [DEFAULT_OPTION, *list_personalities()]
             return {"ok": True, "value": value, "choices": choices}
@@ -270,4 +270,4 @@ def mount_personality_routes(
     @app.get("/voices")
     async def _voices() -> list[str]:
         # Piper voices are model files, not a fixed catalog; report the configured one.
-        return [config.PIPER_VOICE]
+        return [config.TTS_VOICE]

@@ -193,30 +193,18 @@ class Config:
     # Feed the user's audio straight into the chat model (one call: speech -> reply)
     # instead of a separate STT pass. ~2x lower LLM latency and the model hears tone,
     # but there's no separate transcript and TTS language is auto-detected from the reply.
-    OLLAMA_DIRECT_AUDIO = _env_flag("OLLAMA_DIRECT_AUDIO", default=False)
+    OLLAMA_DIRECT_AUDIO = _env_flag("OLLAMA_DIRECT_AUDIO", default=True)
 
-    # --- Text-to-speech backend ---
-    # "piper" = local Piper (default); "remote" = external voice generator via an
-    # OpenAI-compatible /v1/audio/speech endpoint (thin-client / on-prem setup).
-    TTS_BACKEND = (os.getenv("TTS_BACKEND", "piper") or "piper").strip().lower()
-    # Remote TTS (when TTS_BACKEND=remote): full speech endpoint URL.
+    # --- Text-to-speech (remote voice server, OpenAI-compatible /v1/audio/speech) ---
+    # Piper was removed; TTS is always the external voice server (see
+    # scripts/voice_server.py). Set TTS_URL to the server; profiles pick a voice
+    # via voice.txt, otherwise TTS_VOICE is the default (e.g. "Stina").
+    TTS_BACKEND = (os.getenv("TTS_BACKEND", "remote") or "remote").strip().lower()
     TTS_URL = os.getenv("TTS_URL", "")  # e.g. http://voicehost:8880/v1/audio/speech
     TTS_MODEL = os.getenv("TTS_MODEL", "tts-1")
-    TTS_VOICE = os.getenv("TTS_VOICE", "alloy")
+    TTS_VOICE = os.getenv("TTS_VOICE", "Stina")
     TTS_FORMAT = os.getenv("TTS_FORMAT", "wav")  # wav/flac/ogg (decoded via soundfile)
     TTS_API_KEY = os.getenv("TTS_API_KEY")  # optional bearer token
-
-    # --- Piper TTS (when TTS_BACKEND=piper) ---
-    # Voice (ONNX): a voice name resolvable in PIPER_DATA_DIR or an absolute .onnx
-    # path. Profiles may override via their voice.txt.
-    PIPER_VOICE = os.getenv("PIPER_VOICE", "en_US-lessac-medium")
-    PIPER_DATA_DIR = os.getenv("PIPER_DATA_DIR")  # dir holding downloaded Piper voices
-    # Synthesis tuning (None -> the voice's built-in default).
-    PIPER_LENGTH_SCALE = _env_opt_float("PIPER_LENGTH_SCALE")  # >1 slower, <1 faster
-    PIPER_NOISE_SCALE = _env_opt_float("PIPER_NOISE_SCALE")    # expressiveness
-    PIPER_NOISE_W_SCALE = _env_opt_float("PIPER_NOISE_W_SCALE")  # phoneme-length variation
-    PIPER_VOLUME = _env_opt_float("PIPER_VOLUME")             # 1.0 = unchanged
-    PIPER_SPEAKER_ID = _env_int("PIPER_SPEAKER_ID", -1)      # -1 -> default speaker
 
     # VAD tuning (see audio/vad.py).
     VAD_AGGRESSIVENESS = _env_int("VAD_AGGRESSIVENESS", 2)

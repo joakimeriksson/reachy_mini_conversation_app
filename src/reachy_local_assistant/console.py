@@ -337,7 +337,7 @@ class LocalStream:
                 {
                     "ollama_url": getattr(config, "OLLAMA_URL", "") or "",
                     "ollama_model": getattr(config, "OLLAMA_MODEL", "") or "",
-                    "tts_backend": getattr(config, "TTS_BACKEND", "piper") or "piper",
+                    "tts_backend": getattr(config, "TTS_BACKEND", "remote") or "remote",
                     "tts_url": getattr(config, "TTS_URL", "") or "",
                     "tts_voice": getattr(config, "TTS_VOICE", "") or "",
                 }
@@ -375,10 +375,23 @@ class LocalStream:
                 changed.append("TTS_VOICE")
             if not changed:
                 return JSONResponse({"ok": False, "status": "Nothing to save."}, status_code=400)
-            # Persisted to the instance .env and applied to the live config/env; the
-            # backends (Ollama client + TTS) are built at start_up(), so a restart of
-            # the app picks them up. Use the dashboard's "Restart" for the app.
-            status = f"Saved {', '.join(changed)} to the robot. Restart the app to apply."
+            # Persisted to the instance .env + live config/env. Apply immediately by
+            # re-pointing the Ollama clients + rebuilding TTS on the running handler
+            # (like a personality Apply) — no restart needed.
+            status = f"Saved {', '.join(changed)}."
+            loop = self._asyncio_loop
+            if loop is not None:
+                async def _apply() -> str:
+                    return await self.handler.apply_backends()
+
+                try:
+                    import asyncio as _aio
+
+                    fut = _aio.run_coroutine_threadsafe(_apply(), loop)
+                    status = f"{status} {fut.result(timeout=15)}"
+                except Exception as e:
+                    logger.warning("Backend live-apply failed: %s", e)
+                    status = f"{status} Live apply failed ({e}); restart the app to apply."
             return JSONResponse(
                 {
                     "ok": True,

@@ -86,7 +86,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._stt: Optional[GemmaSTT] = None
         self._chat: Optional[OllamaChat] = None
         self._tts: Any = None  # PiperTTS or RemoteTTS (audio.tts.make_tts)
-        self._voice = config.PIPER_VOICE
+        self._voice = config.TTS_VOICE
 
         self._speaking = False  # True while synthesizing/playing a reply (half-duplex gate)
         self._stop = asyncio.Event()
@@ -392,6 +392,30 @@ class OllamaConversationHandler(AsyncStreamHandler):
         except Exception as exc:
             logger.error("Failed to apply personality %r: %s", profile, exc)
             return f"Failed to apply personality: {exc}"
+
+    async def apply_backends(self) -> str:
+        """Apply Ollama/TTS config changes live (no restart).
+
+        Re-points the STT + chat clients at the current ``OLLAMA_URL`` (keeping
+        history/tools) and rebuilds the TTS backend from the current TTS config —
+        so a URL/voice change from the settings page takes effect immediately,
+        like a personality Apply.
+        """
+        try:
+            if self._stt is not None and hasattr(self._stt, "set_host"):
+                self._stt.set_host(config.OLLAMA_URL)
+            if self._chat is not None and hasattr(self._chat, "set_host"):
+                self._chat.set_host(config.OLLAMA_URL)
+            self._tts = make_tts()  # reads TTS_BACKEND / TTS_URL / TTS_VOICE from config
+            self._voice = get_session_voice()
+            logger.info(
+                "Applied backends live: ollama=%s tts=%s voice=%s",
+                config.OLLAMA_URL, config.TTS_BACKEND, getattr(config, "TTS_VOICE", ""),
+            )
+            return "Applied backend settings (no restart)."
+        except Exception as exc:
+            logger.error("Failed to apply backends: %s", exc)
+            return f"Failed to apply backends: {exc}"
 
     # --- helpers ---------------------------------------------------------
 

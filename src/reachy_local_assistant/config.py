@@ -206,6 +206,11 @@ class Config:
     TTS_FORMAT = os.getenv("TTS_FORMAT", "wav")  # wav/flac/ogg (decoded via soundfile)
     TTS_API_KEY = os.getenv("TTS_API_KEY")  # optional bearer token
 
+    # Whisper STT on the same voice server (/v1/audio/transcriptions). In direct-audio
+    # mode the app transcribes the turn AFTER replying and keeps the TEXT in history
+    # (KV-cache-friendly, no audio bloat). Defaults to the TTS host; empty = keep audio.
+    STT_URL = os.getenv("STT_URL") or (TTS_URL.replace("/audio/speech", "/audio/transcriptions") if TTS_URL else "")
+
     # VAD tuning (see audio/vad.py).
     VAD_AGGRESSIVENESS = _env_int("VAD_AGGRESSIVENESS", 2)
     VAD_SILENCE_MS = _env_int("VAD_SILENCE_MS", 500)  # trailing silence that ends a turn; matches OpenAI server_vad
@@ -329,6 +334,7 @@ class Config:
         cls.TTS_VOICE = os.getenv("TTS_VOICE", "Stina")
         cls.TTS_FORMAT = os.getenv("TTS_FORMAT", "wav")
         cls.TTS_API_KEY = os.getenv("TTS_API_KEY")
+        cls.STT_URL = os.getenv("STT_URL") or (cls.TTS_URL.replace("/audio/speech", "/audio/transcriptions") if cls.TTS_URL else "")
 
 
 config = Config()

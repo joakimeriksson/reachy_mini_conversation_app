@@ -30,6 +30,7 @@ from reachy_local_assistant.config import config, set_custom_profile
 from reachy_local_assistant.prompts import get_session_voice, get_session_instructions
 from reachy_local_assistant.audio.dsp import to_mono, resample_int16
 from reachy_local_assistant.audio.tts import make_tts
+from reachy_local_assistant.audio.remote_stt import RemoteSTT
 from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.mcp_client import shutdown_mcp, register_mcp_tools
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT
@@ -85,7 +86,8 @@ class OllamaConversationHandler(AsyncStreamHandler):
         # Backends are built in start_up() so construction stays cheap/import-safe.
         self._stt: Optional[GemmaSTT] = None
         self._chat: Optional[OllamaChat] = None
-        self._tts: Any = None  # PiperTTS or RemoteTTS (audio.tts.make_tts)
+        self._tts: Any = None  # RemoteTTS (audio.tts.make_tts)
+        self._stt_remote: Optional[RemoteSTT] = None  # Whisper transcript for text history (direct-audio)
         self._voice = config.TTS_VOICE
 
         self._speaking = False  # True while synthesizing/playing a reply (half-duplex gate)
@@ -119,6 +121,7 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._stt = GemmaSTT(config.OLLAMA_STT_MODEL, config.OLLAMA_URL)
         self._chat = OllamaChat(config.OLLAMA_MODEL, config.OLLAMA_URL, self.deps, instructions)
         self._tts = make_tts()
+        self._stt_remote = RemoteSTT(config.STT_URL)
         self._voice = get_session_voice()
         if config.BARGE_IN:
             self._barge_vad = VadSegmenter(
@@ -184,7 +187,13 @@ class OllamaConversationHandler(AsyncStreamHandler):
             self.last_activity_time = asyncio.get_event_loop().time()
             if turn.reply:
                 await self.output_queue.put(AdditionalOutputs({"role": "assistant", "content": turn.reply}))
-                await self._speak(turn.reply, turn.language)
+                # Speak the reply and (direct-audio) transcribe the turn concurrently:
+                # Whisper hides under the reply's playback, then swaps the audio blob in
+                # history for text — lighter + KV-cache-friendly. Best-effort.
+                await asyncio.gather(
+                    self._speak(turn.reply, turn.language),
+                    self._transcribe_and_swap(utterance),
+                )
         except Exception as exc:
             logger.exception("Turn failed: %s", exc)
         finally:
@@ -200,6 +209,20 @@ class OllamaConversationHandler(AsyncStreamHandler):
                     break
             self._set_listening(True)
             self.last_activity_time = asyncio.get_event_loop().time()
+
+    async def _transcribe_and_swap(self, utterance: NDArray[np.int16]) -> None:
+        """Direct-audio: transcribe the turn via Whisper and store TEXT in history.
+
+        Runs concurrently with the reply's playback (off the critical path). Replaces
+        the audio blob in the chat history with the transcript so history stays light
+        and KV-cache-friendly. Best-effort: if Whisper is unreachable the audio stays.
+        """
+        if not (config.OLLAMA_DIRECT_AUDIO and self._stt_remote and self._stt_remote.enabled):
+            return
+        text, _lang = await self._stt_remote.transcribe(utterance, VAD_SAMPLE_RATE)
+        if text and self._chat is not None:
+            self._chat.replace_last_user_audio_with_text(text)
+            await self.output_queue.put(AdditionalOutputs({"role": "user", "content": f"📝 {text}"}))
 
     async def _speak(self, text: str, language: str | None = None) -> None:
         """Synthesize *text* sentence-by-sentence and stream each to wobbler + player.

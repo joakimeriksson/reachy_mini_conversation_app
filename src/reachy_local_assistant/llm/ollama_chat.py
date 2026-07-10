@@ -81,6 +81,23 @@ class OllamaChat:
         else:
             self._messages.insert(0, {"role": "system", "content": system_prompt})
 
+    def replace_last_user_audio_with_text(self, text: str) -> None:
+        """Swap the most recent audio user turn for its text transcript.
+
+        In direct-audio mode the user turn is stored as an audio blob; once Whisper
+        has transcribed it (off the reply's critical path) we replace that blob with
+        the text so history stays light and KV-cache-friendly. No-op if the last user
+        turn is already text or *text* is empty.
+        """
+        if not text:
+            return
+        for msg in reversed(self._messages):
+            if msg.get("role") == "user":
+                if msg.get("images"):
+                    msg.pop("images", None)
+                    msg["content"] = text
+                return
+
     def reset(self) -> None:
         """Clear conversation history, keeping the current system prompt."""
         self._messages = [{"role": "system", "content": self._system_prompt}]

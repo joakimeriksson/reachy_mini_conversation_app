@@ -208,7 +208,7 @@ class Config:
 
     # VAD tuning (see audio/vad.py).
     VAD_AGGRESSIVENESS = _env_int("VAD_AGGRESSIVENESS", 2)
-    VAD_SILENCE_MS = _env_int("VAD_SILENCE_MS", 800)
+    VAD_SILENCE_MS = _env_int("VAD_SILENCE_MS", 500)  # trailing silence that ends a turn; matches OpenAI server_vad
     VAD_MIN_SPEECH_MS = _env_int("VAD_MIN_SPEECH_MS", 200)
     VAD_MAX_UTTERANCE_MS = _env_int("VAD_MAX_UTTERANCE_MS", 15000)
     # VAD detector: "webrtc" (light, classic) or "silero" (neural, onnx, torch-free;

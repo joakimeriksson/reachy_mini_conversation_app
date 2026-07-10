@@ -46,8 +46,12 @@ jobs:
         if: runner.os == 'Linux'
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libcairo2-dev libgirepository1.0-dev
-          version: 1.0
+          # gstreamer typelibs: reachy-mini 1.9.0 eagerly imports reachy_mini.media
+          # (via `from reachy_mini import ReachyMini`), which needs the Gst + GstApp
+          # GObject-introspection namespaces at import — else test_console.py can't
+          # even be collected ("Namespace Gst not available").
+          packages: libcairo2-dev libgirepository1.0-dev gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0
+          version: 1.1
 
       - name: Install system deps (macOS)
         if: runner.os == 'macOS'

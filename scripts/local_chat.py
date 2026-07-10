@@ -407,8 +407,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--model", default=config.OLLAMA_MODEL, help="Ollama conversation model")
     p.add_argument("--stt-model", default=config.OLLAMA_STT_MODEL, help="Ollama audio STT model")
     p.add_argument("--ollama-url", default=config.OLLAMA_URL)
-    p.add_argument("--voice", default=config.PIPER_VOICE, help="Piper voice name or .onnx path")
-    p.add_argument("--voice-dir", default=config.PIPER_DATA_DIR or "piper_voices")
+    p.add_argument("--voice", default=config.TTS_VOICE, help="Piper voice name or .onnx path")
+    p.add_argument("--voice-dir", default=None)
     p.add_argument("--profile", default=None, help="Personality profile to load")
     p.add_argument("--silence-ms", type=int, default=config.VAD_SILENCE_MS,
                    help="Trailing silence (ms) that ends an utterance")

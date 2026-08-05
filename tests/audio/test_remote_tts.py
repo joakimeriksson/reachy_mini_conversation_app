@@ -3,7 +3,6 @@
 import io
 
 import numpy as np
-import pytest
 import soundfile as sf
 
 from reachy_local_assistant.audio.remote_tts import RemoteTTS

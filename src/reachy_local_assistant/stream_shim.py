@@ -13,7 +13,7 @@ without that dependency.
 
 from __future__ import annotations
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -27,6 +27,7 @@ class AdditionalOutputs:
     """
 
     def __init__(self, *args: Any) -> None:
+        """Stash the wrapped outputs on ``.args`` for the player loop to drain."""
         self.args = args
 
 
@@ -35,7 +36,9 @@ def audio_to_float32(audio: NDArray[np.int16 | np.float32]) -> NDArray[np.float3
     if audio.dtype == np.int16:
         return audio.astype(np.float32) / 32768.0
     if audio.dtype == np.float32:
-        return audio
+        # The parameter's union dtype survives the runtime check but not mypy's, so
+        # restate the narrowed type rather than widening the return annotation.
+        return cast("NDArray[np.float32]", audio)
     raise TypeError(f"Unsupported audio data type: {audio.dtype}")
 
 
@@ -63,6 +66,7 @@ class AsyncStreamHandler:
         input_sample_rate: int = 48000,
         fps: int = 30,
     ) -> None:
+        """Record the stream geometry the conversation handler reads back."""
         self.expected_layout = expected_layout
         self.output_sample_rate = output_sample_rate
         self.output_frame_size = output_frame_size

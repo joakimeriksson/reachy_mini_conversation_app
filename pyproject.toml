@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reachy_local_assistant"
-version = "0.4.10"
+version = "0.4.11"
 authors = [{ name = "Pollen Robotics", email = "contact@pollen-robotics.com" }]
 description = ""
 readme = "README.md"
@@ -18,6 +18,13 @@ dependencies = [
 
     #Environment variables
     "python-dotenv",
+
+    #Audio/geometry math. Imported directly across src/ (audio/dsp.py, audio/echo_calib.py,
+    # console.py, camera_worker.py), so declare them: the robot installs with
+    # `uv pip install`, which ignores [tool.uv], and relying on reachy-mini to drag
+    # them in transitively breaks the moment upstream drops either one.
+    "numpy",
+    "scipy",
 
     #Local backend: Ollama (Gemma audio LLM/STT). TTS is the remote voice server.
     "ollama>=0.4",
@@ -42,18 +49,14 @@ all_vision = [  # kept as an alias (mediapipe is the only vision backend now)
   "mediapipe==0.10.14",
 ]
 # Standalone "fake robot" voice runner (scripts/local_chat.py, outside src/ so it
-# never ships in the wheel): talk to the Ollama+Piper pipeline via the computer's
-# mic/speaker/webcam, no robot. Robot audio/camera go through `robot.media` instead.
+# never ships in the wheel): talk to the pipeline via the computer's mic/speaker/
+# webcam, no robot. Robot audio/camera go through `robot.media` instead.
 localdev = [
   "sounddevice",
   "opencv-python>=4.12.0.88",  # dev-only: --local-webcam fallback (NOT shipped to the robot)
 ]
-# Self-hosted OpenAI-compatible voice server (scripts/voice_server.py). Piper engine
-# works with the core piper-tts; for the Kokoro engine also `pip install kokoro`.
-voiceserver = [
-  "fastapi",
-  "uvicorn",
-]
+# NOTE: the voice server is NOT an extra of this package — its Kokoro/torch stack
+# conflicts with these pins. It is a separate uv project in voice-server/.
 # Acoustic echo cancellation for barge-in on open speakers (WebRTC APM via livekit).
 aec = [
   "livekit",

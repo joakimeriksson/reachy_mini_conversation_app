@@ -21,14 +21,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from reachy_local_assistant.config import config  # noqa: E402
+from reachy_local_assistant.prompts import get_session_instructions  # noqa: E402
+from reachy_local_assistant.audio.dsp import resample_int16  # noqa: E402
 from reachy_local_assistant.audio.tts import make_tts  # noqa: E402
+from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE  # noqa: E402
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT  # noqa: E402
 from reachy_local_assistant.llm.ollama_chat import OllamaChat  # noqa: E402
-from reachy_local_assistant.prompts import get_session_instructions  # noqa: E402
 from reachy_local_assistant.conversation.turn import generate_reply  # noqa: E402
 from reachy_local_assistant.conversation.speech import stream_sentences  # noqa: E402
-from reachy_local_assistant.audio.dsp import resample_int16  # noqa: E402
-from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE  # noqa: E402
 
 
 PROMPTS = [
@@ -78,7 +78,9 @@ async def main() -> None:
         t_tts = time.perf_counter() - t1
 
         total = t_llm + t_tts
-        llm_t.append(t_llm); tts_t.append(t_tts); tot_t.append(total)
+        llm_t.append(t_llm)
+        tts_t.append(t_tts)
+        tot_t.append(total)
         print(f"{i:>4} {lang:>4} {t_llm:>7.2f} {t_tts:>7.2f} {total:>8.2f}   {turn.reply[:60]!r}")
 
     n = len(tot_t)

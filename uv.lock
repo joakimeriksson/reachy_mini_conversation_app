@@ -3239,19 +3239,21 @@ wheels = [
 
 [[package]]
 name = "reachy-local-assistant"
-version = "0.4.10"
+version = "0.4.11"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "huggingface-hub" },
+    { name = "numpy" },
     { name = "ollama" },
     { name = "pillow" },
     { name = "python-dotenv" },
     { name = "reachy-mini" },
     { name = "reachy-mini-dances-library" },
     { name = "reachy-mini-toolbox" },
+    { name = "scipy" },
     { name = "soundfile" },
     { name = "webrtcvad-wheels" },
 ]
@@ -3273,10 +3275,6 @@ mediapipe-vision = [
 silero = [
     { name = "onnxruntime" },
 ]
-voiceserver = [
-    { name = "fastapi" },
-    { name = "uvicorn" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -3292,13 +3290,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi" },
-    { name = "fastapi", marker = "extra == 'voiceserver'" },
     { name = "fastmcp", specifier = ">=2.8" },
     { name = "httpx" },
     { name = "huggingface-hub", specifier = ">=1.17.0" },
     { name = "livekit", marker = "extra == 'aec'" },
     { name = "mediapipe", marker = "extra == 'all-vision'", specifier = "==0.10.14" },
     { name = "mediapipe", marker = "extra == 'mediapipe-vision'", specifier = "==0.10.14" },
+    { name = "numpy" },
     { name = "ollama", specifier = ">=0.4" },
     { name = "onnxruntime", marker = "extra == 'silero'", specifier = ">=1.20" },
     { name = "opencv-python", marker = "extra == 'localdev'", specifier = ">=4.12.0.88" },
@@ -3307,12 +3305,12 @@ requires-dist = [
     { name = "reachy-mini", specifier = ">=1.9.0" },
     { name = "reachy-mini-dances-library" },
     { name = "reachy-mini-toolbox" },
+    { name = "scipy" },
     { name = "sounddevice", marker = "extra == 'localdev'" },
     { name = "soundfile", specifier = ">=0.12" },
-    { name = "uvicorn", marker = "extra == 'voiceserver'" },
     { name = "webrtcvad-wheels", specifier = ">=2.0.14" },
 ]
-provides-extras = ["mediapipe-vision", "all-vision", "localdev", "voiceserver", "aec", "silero"]
+provides-extras = ["mediapipe-vision", "all-vision", "localdev", "aec", "silero"]
 
 [package.metadata.requires-dev]
 dev = [

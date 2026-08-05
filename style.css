@@ -208,12 +208,20 @@ a {
 	backdrop-filter: blur(10px);
 }
 
-.hero-gif {
+.stack-diagram {
 	width: 100%;
+	margin: 0;
 	display: block;
+	overflow-x: auto;
+	padding: 1.1rem 1rem;
 	border-radius: 14px;
 	border: 1px solid var(--border);
+	background: rgba(0, 0, 0, 0.28);
 	box-shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: clamp(0.72rem, 1.15vw, 0.9rem);
+	line-height: 1.7;
+	white-space: pre;
 }
 
 .caption {

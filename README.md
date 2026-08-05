@@ -5,7 +5,7 @@ colorFrom: red
 colorTo: blue
 sdk: static
 pinned: false
-short_description: Talk with Reachy Mini — fully local (Ollama + Piper)
+short_description: Talk with Reachy Mini — fully local (Ollama + Kokoro voice server)
 suggested_storage: large
 tags:
  - reachy_mini
@@ -15,14 +15,22 @@ tags:
 # Reachy Local Assistant (local / on-prem)
 
 A **fully local** conversational app for the Reachy Mini robot: speech, reasoning,
-and vision run on **Ollama (Gemma)** and the voice on **Piper** — no cloud, no API
-keys. A fork of Pollen's conversation app with the OpenAI Realtime backend
-**replaced by a local, on-prem stack**.
+and vision run on **Ollama (Gemma)** and the voice on a **self-hosted voice
+server** (Kokoro TTS + Whisper STT) — no cloud, no API keys. A fork of Pollen's
+conversation app with the OpenAI Realtime backend **replaced by a local, on-prem
+stack**.
+
+> [!IMPORTANT]
+> Two services must be running before the app can hold a conversation: **Ollama**
+> and the **voice server** (`voice-server/`). Without the voice server Reachy
+> hears and thinks but cannot speak. The app probes both at startup and reports
+> what is missing — see [Bringing up the stack](#bringing-up-the-stack).
 
 ## Table of contents
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Installation](#installation)
+- [Bringing up the stack](#bringing-up-the-stack) — or the full [SETUP.md](SETUP.md) walkthrough
 - [Configuration](#configuration)
 - [Running the app](#running-the-app)
 - [Deploying to a robot](#deploying-to-a-robot)
@@ -31,29 +39,37 @@ keys. A fork of Pollen's conversation app with the OpenAI Realtime backend
 - [License](#license)
 
 ## Overview
-- **Local pipeline:** mic → VAD → **Gemma STT** → **Ollama chat** (+ tools / MCP) → **Piper TTS** → speaker, with the head wobbler reacting to the spoken audio.
+- **Local pipeline:** mic → VAD → **Gemma** (audio straight into the chat model) → **Ollama chat** (+ tools / MCP) → **voice server TTS** → speaker, with the head wobbler reacting to the spoken audio.
 - **Vision via the LLM:** the camera tool hands a frame to the multimodal model (Gemma); no separate vision model.
 - **Long-term memory:** `remember` / `forget` tools persist facts that are injected into the prompt across sessions.
 - **External tool servers:** built-in MCP client connects to remote MCP servers (token / API-key auth).
-- **Pluggable voice:** Piper locally, or an external **OpenAI-compatible `/v1/audio/speech`** voice server for a thin client — run the included `scripts/voice_server.py` (Piper or Kokoro engine). See [DEPLOY.md](DEPLOY.md#self-hosted-voice-server-piper-or-kokoro).
+- **Self-hosted voice:** an **OpenAI-compatible `/v1/audio/speech`** server keeps the robot thin. The included `voice-server/` runs Kokoro (incl. a Swedish fine-tune, 10 voices) plus Whisper transcription.
+- **Barge-in:** talk over Reachy to interrupt it, with WebRTC echo cancellation so it works on open speakers.
 - **Layered motion:** dances, emotions, head-tracking and speech-reactive wobble.
 
-Everything heavy (Gemma, and optionally the voice generator) can run on a separate
-**on-prem server**, keeping the robot/client thin.
+Everything heavy (Gemma and the voice generator) can run on a separate **on-prem
+server**, keeping the robot/client thin.
 
 ## Architecture
 
 ```
-   mic ──▶ VAD ──▶ Gemma STT ──▶ Ollama chat (+tools/MCP) ──▶ Piper TTS ──▶ speaker
-                     (Ollama)         (Ollama)                   (local or
-                                                                  remote /v1/audio/speech)
+   mic ──▶ VAD ──▶ Ollama chat (Gemma: hears audio, +tools/MCP) ──▶ voice server ──▶ speaker
+                                    │                                (/v1/audio/speech)
+                                    └──▶ Whisper (/v1/audio/transcriptions)
+                                         transcribes the turn after the reply,
+                                         so history stores text, not audio
 ```
+
+By default (`OLLAMA_DIRECT_AUDIO=1`) the user's audio goes **straight into the chat
+model** — one call instead of a separate STT pass, roughly halving latency, and the
+model hears tone. Set `OLLAMA_DIRECT_AUDIO=0` for a classic transcribe-then-chat
+pipeline.
 
 On-prem topology (see [DEPLOY.md](DEPLOY.md)):
 
 ```
    Reachy Mini (body) ──WiFi──▶ client app ──OLLAMA_URL──▶ Ollama (Gemma)
-   mic/cam/speaker              VAD · turn loop ──TTS_URL──▶ voice generator (optional)
+   mic/cam/speaker              VAD · turn loop ──TTS_URL/STT_URL──▶ voice server
 ```
 
 ## Installation
@@ -76,6 +92,7 @@ Optional extras:
 ```bash
 uv sync --extra mediapipe_vision   # MediaPipe head-tracking
 uv sync --extra localdev           # standalone "fake robot" runner (sounddevice + webcam)
+uv sync --extra aec                # echo cancellation, so barge-in works on open speakers
 uv sync --group dev                # dev tooling (pytest/ruff/mypy)
 ```
 
@@ -83,10 +100,54 @@ uv sync --group dev                # dev tooling (pytest/ruff/mypy)
 |-------|---------|
 | `mediapipe_vision` | MediaPipe landmarks for the `mediapipe` head-tracker (aiming the head) |
 | `localdev` | `scripts/local_chat.py` — talk via your computer's mic/speaker/webcam (no robot). Not shipped to the robot. |
-| `voiceserver` / `aec` | Self-hosted voice server (fastapi+uvicorn) / echo cancellation for barge-in (livekit). |
+| `aec` | WebRTC echo cancellation (livekit) — required for barge-in on open speakers. |
+| `silero` | Neural VAD backend (`VAD_BACKEND=silero`); better at speech-vs-noise than the default. |
 
 > The conversation **vision** is the multimodal LLM itself — there is no separate
-> local vision model (no torch/transformers).
+> local vision model (no torch/transformers in the app environment).
+
+## Bringing up the stack
+
+**→ Full walkthrough with verification at each step: [SETUP.md](SETUP.md).**
+
+Three processes. The voice server lives in **its own environment**
+(`voice-server/`) because its Kokoro/torch stack conflicts with the app's pins.
+
+```bash
+# 1. Ollama — must listen on all interfaces if the robot/app is on another machine
+OLLAMA_HOST=0.0.0.0 ollama serve
+ollama pull gemma4:latest
+
+# 2. Voice server (TTS + Whisper STT) — its own uv project
+cd voice-server && uv sync
+uv run python ../scripts/voice_server.py \
+    --engine kokoro --voice af_heart --port 8880 --whisper base
+
+# 3. The app
+reachy-local-assistant
+```
+
+Or start all three with the helper, which waits for each to come up:
+
+```bash
+./scripts/start_stack.sh          # --check to just report status, --no-app for backends only
+```
+
+Check what is running at any time:
+
+```bash
+curl -s localhost:8880/health          # {"status":"ok","tts":true,"stt":true,...}
+curl -s localhost:11434/api/tags       # Ollama's pulled models
+```
+
+The app probes both backends at startup and logs exactly what is unreachable; the
+same status is shown on the settings page under **Ollama & voice server**, with a
+**Check connection** button.
+
+> **Voice names are engine-specific.** `--engine kokoro` uses `af_heart`-style
+> names; the Swedish `--engine kokoro-svml` uses named packs like `Stina` and
+> additionally needs the separate `swedish-kokoro` checkout. See
+> [voice-server/README.md](voice-server/README.md).
 
 ## Configuration
 
@@ -96,25 +157,34 @@ No API key is required. Key variables:
 | Variable | Description |
 |----------|-------------|
 | `OLLAMA_URL` | Ollama server (local or remote). Default `http://localhost:11434`. |
-| `OLLAMA_MODEL` | Conversation model (audio STT + chat + vision + tools), e.g. `gemma4:latest`. |
-| `OLLAMA_STT_MODEL` | STT model (defaults to `OLLAMA_MODEL`). |
+| `OLLAMA_MODEL` | Conversation model (audio + chat + vision + tools), e.g. `gemma4:latest`. |
+| `OLLAMA_DIRECT_AUDIO` | `1` (default): feed audio straight to the chat model. `0`: separate STT pass. |
+| `OLLAMA_STT_MODEL` | STT model when `OLLAMA_DIRECT_AUDIO=0` (defaults to `OLLAMA_MODEL`). |
 | `OLLAMA_TEMPERATURE` / `OLLAMA_NUM_CTX` / `OLLAMA_KEEP_ALIVE` | Generation + model-load tuning. |
-| `TTS_BACKEND` | `piper` (local) or `remote` (external `/v1/audio/speech`). |
-| `PIPER_VOICE` / `PIPER_DATA_DIR` | Piper voice (auto-downloads). `PIPER_LENGTH_SCALE` = speed. |
-| `TTS_URL` / `TTS_MODEL` / `TTS_VOICE` | Remote voice generator (when `TTS_BACKEND=remote`). |
+| `TTS_URL` | **Required.** Voice server `/v1/audio/speech`, e.g. `http://voicehost:8880/v1/audio/speech`. |
+| `TTS_VOICE` / `TTS_MODEL` / `TTS_FORMAT` | Voice name — must match the engine (`af_heart` for `kokoro`, `Stina` for `kokoro-svml`). |
+| `STT_URL` | Whisper `/v1/audio/transcriptions`. Defaults to the `TTS_URL` host; used for the text history. |
 | `VAD_AGGRESSIVENESS` / `VAD_SILENCE_MS` | Voice-activity detection (raise aggressiveness if it over-listens). |
+| `VAD_BACKEND` / `VAD_THRESHOLD` | `webrtc` (default) or `silero` (neural, needs the `silero` extra). |
+| `BARGE_IN` / `AEC` | Interrupt Reachy mid-reply; echo cancellation so that works on open speakers. |
 | `MCP_SERVER_URLS` | External MCP tool servers (comma-separated; append `token=` / `api_key=`). |
 | `REACHY_MINI_CUSTOM_PROFILE` | Personality profile (folder under `profiles/`). |
 
-See `.env.example` for the fully annotated list.
+See `.env.example` for the fully annotated list. `TTS_URL`, `OLLAMA_URL` and the
+voice can also be set from the app's settings page and are persisted there.
 
 ## Running the app
 
 ```bash
 reachy-local-assistant
 ```
-On a real robot the app auto-selects **console mode** (audio/camera through the
-robot). In **simulation** it auto-enables a Gradio web UI at http://localhost:7860.
+The app is **headless**: audio and camera flow through the robot's media pipeline
+(`robot.media`). When launched by the Reachy Mini Apps runtime it also serves a
+settings page — backend URLs and their health, personality studio, MCP servers,
+and the live conversation transcript — at http://localhost:7860. That page is
+this app's own server (declared via `custom_app_url`); the **Reachy Mini Control**
+desktop app opens it, and you can also browse to it directly. It is unrelated to
+the robot's old web dashboard, which was removed in SDK 1.9.0.
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -122,8 +192,7 @@ robot). In **simulation** it auto-enables a Gradio web UI at http://localhost:78
 | `--no-camera` | `False` | Run without the camera. |
 | `--local-webcam` | `False` | Dev only: use the computer's webcam (OpenCV) when `robot.media` has no camera. |
 | `--webcam-index` | `0` | OpenCV webcam device index. |
-| `--gradio` | `False` | Launch the Gradio web UI (auto-on in simulation). |
-| `--robot-name` | `None` | Connect to a specific robot by name. |
+| `--robot-name` | `None` | Connect to a specific robot by name (must match the daemon's). |
 | `--mcp-servers` | `None` | Override `MCP_SERVER_URLS` from the CLI. |
 | `--debug` | `False` | Verbose logging. |
 
@@ -149,7 +218,7 @@ provides the body over WiFi. Use `.env.robot.example` as your config template.
 | `head_tracking` | Toggle head-tracking offsets (position only, no recognition). |
 | `dance` / `stop_dance` | Play / clear a dance from `reachy_mini_dances_library`. |
 | `play_emotion` / `stop_emotion` | Play / clear a recorded emotion (open HF dataset). |
-| `do_nothing` | Explicitly remain idle. |
+| `task_status` / `task_cancel` | Inspect / cancel a long-running background tool. |
 
 External tools from configured `MCP_SERVER_URLS` are exposed automatically.
 
@@ -164,8 +233,9 @@ Built-in motion content is published as open Hugging Face datasets:
 
 Set `REACHY_MINI_CUSTOM_PROFILE=<name>` to load `profiles/<name>/`. If unset, the
 `default` profile is used. Each profile includes `instructions.txt` (prompt) and
-recommended `tools.txt` (allowed tools); an optional `voice.txt` selects the Piper
-voice. Profiles may include custom tool implementations (Python files subclassing
+recommended `tools.txt` (allowed tools); an optional `voice.txt` overrides
+`TTS_VOICE` for that personality (e.g. a different Kokoro voice per character).
+Profiles may include custom tool implementations (Python files subclassing
 `reachy_local_assistant.tools.core_tools.Tool`; see `profiles/example/`).
 
 Reuse shared prompt fragments via `[name]` placeholders, which pull matching files

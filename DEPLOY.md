@@ -5,20 +5,24 @@ the **robot (onboard Pi) provides the body** (mic, speaker, camera, motors via i
 own daemon), and the **heavy models run on a remote Ollama** server.
 
 ```
-   ┌──────────────┐   WiFi / mDNS    ┌─────────────────────┐
-   │ Reachy Mini  │◀───robot.media──▶│  Your Mac           │
-   │ Wireless     │  (audio/camera,  │  reachy-mini-        │
-   │ (onboard Pi  │   motor commands)│  conversation-app    │
-   │  + daemon)   │   :8000          │  (VAD·Piper·turn loop)│
-   └──────────────┘                  └──────────┬──────────┘
-                                                 │ OLLAMA_URL
-                                                 ▼
-                                       ┌─────────────────────┐
-                                       │ Ollama server       │
-                                       │ gemma4 (STT + chat) │
-                                       │  :11434             │
-                                       └─────────────────────┘
+   ┌──────────────┐   WiFi / mDNS    ┌──────────────────────┐
+   │ Reachy Mini  │◀───robot.media──▶│  Your Mac            │
+   │ Wireless     │  (audio/camera,  │  reachy-local-       │
+   │ (onboard Pi  │   motor commands)│  assistant           │
+   │  + daemon)   │   :8000          │  (VAD · turn loop)   │
+   └──────────────┘                  └────┬────────────┬────┘
+                                          │ OLLAMA_URL │ TTS_URL / STT_URL
+                                          ▼            ▼
+                            ┌─────────────────┐  ┌──────────────────────┐
+                            │ Ollama server   │  │ Voice server         │
+                            │ gemma4          │  │ Kokoro TTS + Whisper │
+                            │  :11434         │  │  :8880               │
+                            └─────────────────┘  └──────────────────────┘
 ```
+
+**Both** backend services must be running. The app probes them at startup and
+logs precisely what is unreachable; the settings page shows the same status with
+a **Check connection** button.
 
 Nothing about the conversation pipeline changes — only *where* audio/camera come
 from (the real robot instead of sim/sounddevice). The Mac-sim headaches
@@ -30,10 +34,16 @@ daemon runs on the robot's Linux, and the camera comes from `robot.media`.
 ## 1. Network
 
 - Mac and robot on the **same WiFi**.
-- Confirm the robot's daemon is reachable (it runs on the Pi, port 8000):
+- Confirm the robot's daemon is reachable (it runs on the Pi, port 8000). Probe
+  the **API**, not `/` — since SDK 1.9.0 the web dashboard is gone and `/` only
+  serves a "download the desktop app" page:
   ```bash
-  curl -s -o /dev/null -w "%{http_code}\n" http://reachy-mini.local:8000/    # expect a code, not "could not resolve"
+  curl -s http://reachy-mini.local:8000/api/daemon/status | grep -o '"ready":[a-z]*'
   ```
+  Launch the app only once that reads `"ready":true` — after a firmware update
+  the motor backend can sit at `ready:false`, and the app then hangs at "Using
+  WebRTC streaming backend". A robot reboot cures it.
+
   If `reachy-mini.local` doesn't resolve, use the robot's IP, or pass
   `--robot-name <name>` to the app if the robot has a custom name.
 
@@ -56,101 +66,87 @@ Copy `.env.robot.example` to `.env` and set:
 ```dotenv
 OLLAMA_URL="http://<OLLAMA_HOST>:11434"     # the remote Ollama
 OLLAMA_MODEL="gemma4:latest"
-PIPER_VOICE="en_US-lessac-medium"
-PIPER_DATA_DIR="piper_voices"               # auto-downloads on first run if missing
+TTS_URL="http://<VOICE_HOST>:8880/v1/audio/speech"    # required — see step 4
+TTS_VOICE="Stina"
 REACHY_MINI_CUSTOM_PROFILE="default"        # your personality
 # MCP_SERVER_URLS="https://your-host/mcp api_key=..."   # optional external tools
 ```
 
-## 4. Run the app (on the Mac)
+## 4. Voice server
+
+Required — without it Reachy hears and thinks but never speaks. It runs in its
+own environment (see [voice-server/README.md](voice-server/README.md)):
+
+```bash
+cd voice-server && uv sync
+PYTORCH_ENABLE_MPS_FALLBACK=1 SWEDISH_KOKORO_PATH=/abs/path/to/swedish-kokoro \
+  uv run python ../scripts/voice_server.py \
+      --engine kokoro-svml --voice Stina --port 8880 --whisper base
+```
+
+The Swedish engine additionally needs the separate `swedish-kokoro` checkout for
+its g2p module; for a stack that needs nothing outside this repo use
+`--engine kokoro --voice af_heart`.
+
+Verify, and note `"stt":true` — without `--whisper` the conversation still works
+but history keeps raw audio instead of transcripts:
+```bash
+curl -s http://<VOICE_HOST>:8880/health
+```
+
+## 5. Run the app (on the Mac)
 
 ```bash
 uv run reachy-local-assistant
 #   add --robot-name <name> if the daemon was started with one
 ```
 
-**Do NOT pass** `--mockup-sim`, `--no-media`, `--local-webcam`, or `--gradio` —
-those are sim/dev-only. On the real robot the app auto-selects the headless
-console path: audio is the **robot's mic/speaker**, the camera is the **robot's
-camera** (so "what do you see?" uses the real camera via `robot.media`).
+**Do NOT pass** `--mockup-sim`, `--no-media`, or `--local-webcam` — those are
+sim/dev-only. On the real robot the app uses the headless console path: audio is
+the **robot's mic/speaker**, the camera is the **robot's camera** (so "what do you
+see?" uses the real camera via `robot.media`).
 
 You should see:
 ```
-Connection mode selected: ...           # connected to the robot daemon
+Connection mode selected: ...                        # connected to the robot daemon
+Backend OK — Ollama: Up, N model(s), gemma4:latest available.
+Backend OK — Voice server (TTS): Up at http://...:8880.
 Ollama conversation handler ready (model=gemma4:latest)
 ```
-Then just talk to the robot.
+Any `Backend DOWN` line names the service and what to do about it. Then just talk
+to the robot.
 
-## 5. Tuning
+## 6. Tuning
 
 - **VAD** (if it captures too long / never stops): set `VAD_AGGRESSIVENESS=3` and/or
   lower `VAD_SILENCE_MS` in `.env`. The handler re-reads these live.
 - **Echo / self-listening**: the half-duplex gate holds the mic for the full reply
-  + a 0.6 s tail. If a tail of speech still leaks in, we can raise that.
-- **Latency**: two network hops (robot↔Mac, Mac↔Ollama). Keep Ollama close
-  (same LAN). gemma4 STT+chat dominates; a faster Ollama host helps most.
+  + a 0.6 s tail. For talking *over* Reachy, set `BARGE_IN=1` and `AEC=1` (needs
+  the `aec` extra); the echo delay auto-calibrates with a chirp at startup.
+- **Latency**: three hops (robot↔Mac, Mac↔Ollama, Mac↔voice server). Keep them on
+  one LAN. The Ollama call dominates; a faster Ollama host helps most. Measure with
+  `python scripts/latency_bench.py`.
 
 ---
 
-# Self-hosted voice server (Piper or Kokoro)
+# Self-hosted voice server
 
-By default the app speaks with **local Piper** (`TTS_BACKEND=piper`). To offload
-TTS to a server (thin client), run the included OpenAI-compatible voice server
-(`scripts/voice_server.py`, exposes `/v1/audio/speech`) and point the app at it:
+Engines, voices, Whisper, and running it as a service are documented in
+**[voice-server/README.md](voice-server/README.md)**. In short:
+
+```bash
+cd voice-server && uv sync
+PYTORCH_ENABLE_MPS_FALLBACK=1 uv run python ../scripts/voice_server.py \
+    --engine kokoro-svml --voice Stina --port 8880 --whisper base
+```
 
 ```dotenv
-TTS_BACKEND=remote
 TTS_URL=http://<voice-host>:8880/v1/audio/speech
-TTS_VOICE=en_US-lessac-medium     # a voice for the chosen engine
+TTS_VOICE=Stina
 ```
 
-Two interchangeable engines — pick at launch:
-
-```bash
-# Piper engine (light: reuses this repo's Piper voices)
-uv sync --extra voiceserver
-uv run python scripts/voice_server.py --engine piper --voice en_US-lessac-medium
-
-# Kokoro engine (hexgrad/Kokoro-82M; needs torch + the model download).
-# The voice server is a SEPARATE service, so install kokoro into ITS environment
-# only — it is deliberately NOT a project dependency (its huggingface-hub needs
-# would conflict with the app's pin). Run it with the venv python directly so
-# `uv run` doesn't re-sync it away:
-uv pip install kokoro
-.venv/bin/python scripts/voice_server.py --engine kokoro --voice af_heart --port 8881
-```
-
-**Swedish** (`kokoro-sv` engine): Kokoro ships no Swedish, so this uses a
-fine-tuned voice from the sibling **swedish-kokoro** project — a torch-free ONNX
-model + espeak `sv` g2p (the model/voicepack auto-download from its HF repo). Point
-at the project with `--svml-path` or `$SWEDISH_KOKORO_PATH`:
-```bash
-uv pip install onnxruntime misaki phonemizer-fork espeakng_loader torch
-SWEDISH_KOKORO_PATH=../ai-smarthome/swedish-kokoro \
-  .venv/bin/python scripts/voice_server.py --engine kokoro-sv --port 8882
-# app: TTS_BACKEND=remote  TTS_URL=http://<host>:8882/v1/audio/speech
-```
-**`kokoro-svml` engine (Torch, neural g2p)** — the higher-quality path: the same
-fine-tuned voice but driven by `KokoroSVML`, whose `SwedishG2P` uses the **neural
-NST g2p** (correct loanword/name pronunciation) instead of espeak, and which also
-speaks the other Kokoro languages. It needs `kokoro` + `torch` **and the neural
-g2p model present** (the `swedish-tts/g2p` project, via `SV_NEURAL_G2P`/`SV_G2P_DIR`).
-Run it where that model lives — typically the GPU box:
-```bash
-SV_NEURAL_G2P=nst_g2p SV_G2P_DIR=/abs/path/to/swedish-tts/g2p \
-SWEDISH_KOKORO_PATH=/abs/path/to/swedish-kokoro \
-  python scripts/voice_server.py --engine kokoro-svml --host 0.0.0.0 --port 8880
-# startup log must say `swedish g2p backend=neural` (not espeak)
-```
-> Note: `KokoroSVML` defaults to the neural g2p and only checks that the *adapter*
-> imports, not the model — so on a machine **without** the g2p model it reports
-> `neural` then errors at synth. On espeak-only machines (Mac/robot) use `kokoro-sv`.
-
-(For plain Swedish without the neural voice, use Piper `sv_SE-nst-medium` instead.)
-
-All engines return WAV that `RemoteTTS` decodes via `soundfile`. Verified
-end-to-end: Piper @ 22.05 kHz, Kokoro @ 24 kHz, Swedish Kokoro @ 24 kHz. Bind the
-host to `0.0.0.0` and open the port so the robot/client can reach it.
+All engines return WAV that `RemoteTTS` decodes via `soundfile` (Kokoro @ 24 kHz).
+Bind to `0.0.0.0` and open the port so the robot/client can reach it.
 `scripts/voice_server.py` lives outside `src/`, so it never ships in the robot wheel.
 
 ---
@@ -158,14 +154,26 @@ host to `0.0.0.0` and open the port so the robot/client can reach it.
 # Deploy as a standalone on-robot app
 
 Reachy Mini's "app store" is **HuggingFace Spaces**. You publish the app to a
-Space under your account, then install it from the robot's dashboard, which
-pip-installs it onto the Pi and runs it via the `reachy_mini_apps` entry point.
+Space under your account, then install it from the **Reachy Mini Control** app,
+which pip-installs it onto the Pi and runs it via the `reachy_mini_apps` entry
+point.
 
-> **Hard constraint:** gemma4 (and ideally the STT model) **cannot run on the
-> Pi**. The Pi runs the app + Piper + VAD only, and `OLLAMA_URL` must point at a
-> remote Ollama (your Mac or a server) reachable from the robot over WiFi. Keep
-> it always-on, bound to `0.0.0.0`, with `gemma4:latest` pulled. (OpenCV is not
-> needed on the Pi — the camera tool uses Pillow and the robot's own camera.)
+> [!IMPORTANT]
+> **The robot's web dashboard is gone as of SDK 1.9.0.** `http://reachy-mini.local:8000/`
+> (and `/settings`, `/logs`) now serve only a "Web Dashboard Deprecated" page
+> pointing at the **Reachy Mini Control** desktop app —
+> <https://pollen-robotics-reachy-mini.hf.space/download>. Install/start/config
+> all happen there now.
+>
+> The daemon's **REST API is unaffected** (`/api/apps/*`, `/api/daemon/*`,
+> `/api/media/*`, …), so the scripted paths below still work, and this app's own
+> settings page is a *separate* server that is **not** deprecated (see step 5).
+
+> **Hard constraint:** neither gemma4 nor the Kokoro voice **can run on the Pi**.
+> The Pi runs the app + VAD + turn loop only; `OLLAMA_URL` and `TTS_URL` must both
+> point at machines reachable from the robot over WiFi (your Mac or a server).
+> Keep them always-on and bound to `0.0.0.0`. (OpenCV is not needed on the Pi —
+> the camera tool uses Pillow and the robot's own camera.)
 
 ## 1. Validate the app package
 ```bash
@@ -181,35 +189,56 @@ uv run huggingface-cli login        # or export HF_TOKEN=hf_...
 
 ## 3. Publish to a Space (your account, your fork)
 ```bash
-uv run reachy-mini-app-assistant publish . "Local Ollama+Piper conversation app" --public
+uv run reachy-mini-app-assistant publish . "Fully local Ollama + Kokoro conversation app" --public
 ```
 - Omit `--official` — that requests inclusion in Pollen's official store; this is
   your fork.
 - Creates `https://huggingface.co/spaces/<you>/<app>` with the code.
-- Re-run `publish` to push updates; the dashboard can then "Update" the app.
+- Re-run `publish` to push updates; Reachy Mini Control can then "Update" the app.
 
 ## 4. Install on the robot
-Open the robot dashboard (the Reachy Mini web UI), find your app (by its Space),
-and **Install** — it pip-installs the package + deps into the robot's apps venv.
-`onnxruntime`, `piper-tts`, and `webrtcvad-wheels` all ship arm64 wheels, so the
-Pi install works without compiling.
+In **Reachy Mini Control** (the desktop app — the web dashboard no longer exists),
+find your app by its Space and **Install**. It pip-installs the package + deps
+into the robot's apps venv; `webrtcvad-wheels`, `numpy` and `scipy` all ship
+arm64 wheels, so the Pi install works without compiling.
+
+Or drive the daemon's REST API directly, which is handy when the app vanishes
+after a failed update (the updater uninstalls before it installs):
+```bash
+curl -X POST http://reachy-mini.local:8000/api/apps/install-private-space \
+     -H 'Content-Type: application/json' \
+     -d '{"space_id":"<you>/reachy_mini_conversation_app"}'   # uses the stored HF token
+curl -X POST http://reachy-mini.local:8000/api/apps/start-app/reachy_local_assistant
+```
+
+> Bump `version` in `pyproject.toml` on **every dependency change**: the robot's
+> uv caches built metadata by `(name, version)`, so a re-published Space with the
+> same version can be installed with stale, previously-failing dependencies.
 
 ## 5. Configure on the robot
-The app reads its instance `.env`. Set at minimum:
+Easiest is the app's own settings page ("Ollama & voice server" panel), which
+persists to the instance `.env` and applies live — then hit **Check connection**.
+Remember that on the robot `localhost` is the Pi, so use your Mac's LAN IP:
 ```dotenv
-OLLAMA_URL="http://<your-ollama-host>:11434"   # MUST be remote/reachable from the Pi
+OLLAMA_URL="http://<your-ollama-host>:11434"   # MUST be reachable from the Pi
 OLLAMA_MODEL="gemma4:latest"
-PIPER_VOICE="en_US-lessac-medium"
+TTS_URL="http://<your-voice-host>:8880/v1/audio/speech"
+TTS_VOICE="Stina"
 REACHY_MINI_CUSTOM_PROFILE="default"
 ```
-Personality and MCP servers are also editable from the app's settings page in
-the dashboard. The Piper voice auto-downloads on first run.
+Personality, MCP servers and the live conversation transcript are on that same
+page. It is served by **this app**, not the daemon (`custom_app_url` in
+`main.py`, port 7860), so the dashboard deprecation does not affect it — Reachy
+Mini Control opens it for you, and it also works by browsing straight to
+`http://reachy-mini.local:7860/` while the app is running.
 
 ## 6. Run
-Start the app from the dashboard. Audio/camera come from the robot's own
-hardware; STT + chat go to the remote Ollama; Piper speaks locally on the Pi.
+Start the app from Reachy Mini Control. Audio/camera come from the robot's own
+hardware; speech + chat go to the remote Ollama; the voice comes back from the
+remote voice server. The app's log (and the settings page) reports whether both
+are reachable — check there first if Reachy listens but never answers.
 
 ## Alternative: local install (no HuggingFace)
 You can also copy the repo onto the Pi and `pip install -e .` into the apps venv
-(the dashboard also supports a LOCAL app source). Handy for private iteration
-without publishing a Space.
+(a LOCAL app source is still supported). Handy for private iteration without
+publishing a Space.

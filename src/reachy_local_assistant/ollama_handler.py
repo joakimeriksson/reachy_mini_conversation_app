@@ -1,18 +1,20 @@
-"""Local conversation handler: Ollama (Gemma audio) + Piper TTS.
+"""Local conversation handler: Ollama (Gemma) + the remote voice server.
 
-Drop-in replacement for ``OpenaiRealtimeHandler`` that runs the whole pipeline
-locally instead of streaming to OpenAI. It implements the same interface the
-``LocalStream`` loops and the fastrtc ``Stream`` drive — ``start_up``,
-``receive``, ``emit``, ``shutdown``, ``copy`` — and feeds the head wobbler with
-24 kHz PCM exactly as the OpenAI path did, so robot motion is unchanged.
+Runs the whole pipeline on hardware you own instead of streaming to a cloud API.
+``LocalStream`` drives it through ``start_up`` / ``receive`` / ``emit`` /
+``shutdown`` / ``copy``, and it feeds the head wobbler 24 kHz PCM so robot motion
+is timed the same way regardless of the speech backend.
 
 Pipeline (turn-based):
 
-    mic ──receive──▶ resample 16 kHz ──▶ VAD ──utterance──▶ Gemma STT ──text──▶
-        Ollama chat (+tools) ──reply──▶ Piper TTS ──▶ wobbler + output_queue ──▶ speaker
+    mic ──receive──▶ resample 16 kHz ──▶ VAD ──utterance──▶ Ollama chat
+        (audio in directly, or via Gemma STT first) ──reply──▶ voice server TTS
+        ──▶ wobbler + output_queue ──▶ speaker
 
-Phase 1 is half-duplex: mic frames are ignored while Reachy is speaking. Phase 2
-adds AEC + barge-in (see ``audio/aec.py``).
+Half-duplex by default: mic frames are ignored while Reachy speaks. With
+``BARGE_IN`` a stricter VAD listens through playback so the user can interrupt,
+and ``AEC`` removes Reachy's own voice from the mic so that works on open
+speakers (see ``audio/aec.py``).
 """
 
 from __future__ import annotations
@@ -20,21 +22,24 @@ import math
 import base64
 import asyncio
 import logging
-from typing import Any, Tuple, Optional
+from typing import Any, Tuple, Callable, Optional
 
 import numpy as np
-from reachy_local_assistant.stream_shim import AdditionalOutputs, AsyncStreamHandler, wait_for_item
 from numpy.typing import NDArray
 
 from reachy_local_assistant.config import config, set_custom_profile
+from reachy_local_assistant.health import BackendHealth, log_health, check_backends
 from reachy_local_assistant.prompts import get_session_voice, get_session_instructions
+from reachy_local_assistant.language import LanguageHistory
 from reachy_local_assistant.audio.dsp import to_mono, resample_int16
 from reachy_local_assistant.audio.tts import make_tts
-from reachy_local_assistant.audio.remote_stt import RemoteSTT
 from reachy_local_assistant.audio.vad import VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.mcp_client import shutdown_mcp, register_mcp_tools
+from reachy_local_assistant.transcript import PENDING_USER_TEXT, Transcript
+from reachy_local_assistant.stream_shim import AdditionalOutputs, AsyncStreamHandler, wait_for_item
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
+from reachy_local_assistant.audio.remote_stt import RemoteSTT
 from reachy_local_assistant.tools.core_tools import ToolDependencies
 from reachy_local_assistant.conversation.turn import generate_reply
 from reachy_local_assistant.conversation.speech import stream_sentences
@@ -52,7 +57,7 @@ PLAYBACK_TAIL_S = 0.6
 
 
 class OllamaConversationHandler(AsyncStreamHandler):
-    """Turn-based local conversation handler (Ollama + Piper)."""
+    """Turn-based local conversation handler (Ollama + remote voice server)."""
 
     def __init__(
         self,
@@ -72,6 +77,10 @@ class OllamaConversationHandler(AsyncStreamHandler):
 
         self.output_queue: "asyncio.Queue[Tuple[int, NDArray[np.int16]] | AdditionalOutputs]" = asyncio.Queue()
         self._utterances: "asyncio.Queue[NDArray[np.int16]]" = asyncio.Queue()
+        # Flush hook installed by LocalStream: drops audio already handed to the
+        # robot's player. Draining output_queue alone is not enough to stop a reply —
+        # frames pushed into the player's appsrc keep playing until it is flushed too.
+        self._clear_queue: Optional[Callable[[], None]] = None
 
         self._vad_aggr = config.VAD_AGGRESSIVENESS
         self._vad_silence = config.VAD_SILENCE_MS
@@ -102,6 +111,15 @@ class OllamaConversationHandler(AsyncStreamHandler):
         # Startup echo-delay auto-calibration (captures the mic while a probe plays).
         self._calibrating = False
         self._calib_near: list[NDArray[np.int16]] = []
+        # Last backend reachability result, surfaced on the settings page.
+        self.health = BackendHealth()
+        # Human-readable conversation log for the settings page (the LLM's own
+        # history lives in OllamaChat and carries prompts/tool calls/audio).
+        self.transcript = Transcript()
+        self._pending_user_seq: Optional[int] = None
+        # Which language the conversation is in, from Whisper's per-turn detection.
+        # Passed to the voice server as a tie-breaker for short replies.
+        self._lang_history = LanguageHistory()
         self.last_activity_time = asyncio.get_event_loop().time()
 
     def copy(self) -> "OllamaConversationHandler":
@@ -149,6 +167,8 @@ class OllamaConversationHandler(AsyncStreamHandler):
         except Exception as exc:
             logger.warning("MCP registration failed: %s", exc)
 
+        await self.refresh_health()
+
         self._set_listening(True)
         logger.info("Ollama conversation handler ready (model=%s)", config.OLLAMA_MODEL)
 
@@ -172,9 +192,15 @@ class OllamaConversationHandler(AsyncStreamHandler):
         self._set_listening(False)
         try:
 
+            # Remembered so the Whisper transcript can upgrade this turn in place
+            # rather than appending a second line for the same utterance.
+            self._pending_user_seq = None
+
             async def _show_user(text: str) -> None:
                 # Show the user's turn (transcript, or a mic glyph in direct-audio mode).
-                await self.output_queue.put(AdditionalOutputs({"role": "user", "content": text or "🎤 …"}))
+                content = text or PENDING_USER_TEXT
+                self._pending_user_seq = self.transcript.add("user", content)
+                await self.output_queue.put(AdditionalOutputs({"role": "user", "content": content}))
 
             turn = await generate_reply(
                 self._stt,
@@ -185,7 +211,11 @@ class OllamaConversationHandler(AsyncStreamHandler):
                 on_user_text=_show_user,
             )
             self.last_activity_time = asyncio.get_event_loop().time()
+            # Cascade mode detects the language before replying, so it can inform
+            # this very turn (direct-audio mode records it after, via Whisper).
+            self._lang_history.record(turn.language, turn.user_text)
             if turn.reply:
+                self.transcript.add("assistant", turn.reply)
                 await self.output_queue.put(AdditionalOutputs({"role": "assistant", "content": turn.reply}))
                 # Speak the reply and (direct-audio) transcribe the turn concurrently:
                 # Whisper hides under the reply's playback, then swaps the audio blob in
@@ -219,9 +249,17 @@ class OllamaConversationHandler(AsyncStreamHandler):
         """
         if not (config.OLLAMA_DIRECT_AUDIO and self._stt_remote and self._stt_remote.enabled):
             return
-        text, _lang = await self._stt_remote.transcribe(utterance, VAD_SAMPLE_RATE)
+        text, lang = await self._stt_remote.transcribe(utterance, VAD_SAMPLE_RATE)
+        # Whisper heard the user directly, which is a far better language signal
+        # than guessing from Reachy's own reply — remember it for later turns,
+        # weighted by how much was actually said.
+        self._lang_history.record(lang, text)
         if text and self._chat is not None:
             self._chat.replace_last_user_audio_with_text(text)
+            # Upgrade the placeholder line in place so the transcript shows one
+            # user turn, not a mic glyph followed by its own transcription.
+            if self._pending_user_seq is not None:
+                self.transcript.update(self._pending_user_seq, text)
             await self.output_queue.put(AdditionalOutputs({"role": "user", "content": f"📝 {text}"}))
 
     async def _speak(self, text: str, language: str | None = None) -> None:
@@ -230,7 +268,9 @@ class OllamaConversationHandler(AsyncStreamHandler):
         Splitting lets the first sentence start playing while later ones are still
         synthesizing (low latency to first word), and keeps each utterance within
         Kokoro's per-utterance token limit. *language* (from STT) tells a
-        multilingual voice server which language to speak.
+        multilingual voice server which language to speak; without one it also
+        gets the conversation's language as a hint, so a short reply the server
+        can't confidently classify on its own isn't spoken in the wrong accent.
         """
         assert self._tts
         if self.deps.head_wobbler is not None:
@@ -239,12 +279,16 @@ class OllamaConversationHandler(AsyncStreamHandler):
         loop = asyncio.get_running_loop()
         total_samples = 0
         play_start: float | None = None
+        # Read once: the concurrent Whisper pass for THIS turn may land mid-reply,
+        # and a hint that changes between sentences would shift accent mid-sentence.
+        hint = self._lang_history.hint()
 
         def should_stop() -> bool:
             return self._stop.is_set() or self._interrupt.is_set()
 
         async for src_rate, pcm in stream_sentences(
-            self._tts, text, voice=self._voice, language=language, should_stop=should_stop, loop=loop
+            self._tts, text, voice=self._voice, language=language,
+            language_hint=hint, should_stop=should_stop, loop=loop,
         ):
             pcm24 = resample_int16(pcm, src_rate, WOBBLER_SAMPLE_RATE)
             if play_start is None:
@@ -373,6 +417,13 @@ class OllamaConversationHandler(AsyncStreamHandler):
                 self.output_queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
+        # Also flush what already reached the player, or a barge-in only stops the
+        # *next* chunk while the buffered tail of Reachy's reply plays on.
+        if self._clear_queue is not None:
+            try:
+                self._clear_queue()
+            except Exception as exc:
+                logger.debug("Player flush failed: %s", exc)
         if self.deps.head_wobbler is not None:
             self.deps.head_wobbler.reset()
 
@@ -415,10 +466,30 @@ class OllamaConversationHandler(AsyncStreamHandler):
                 # effect immediately — otherwise the old history's momentum (e.g.
                 # English) keeps dominating and the switch "doesn't seem to work".
                 self._chat.reset()
+                # Keep the visible transcript in step with the model's history;
+                # leaving the old turns on screen implies context that is gone.
+                self.transcript.clear()
+                # The new personality may speak a different language; carrying the
+                # old hint over would fight the switch on every short reply.
+                self._lang_history.clear()
             return "Applied personality."
         except Exception as exc:
             logger.error("Failed to apply personality %r: %s", profile, exc)
             return f"Failed to apply personality: {exc}"
+
+    async def refresh_health(self) -> BackendHealth:
+        """Re-probe the backends, log the result, and cache it for the settings page."""
+        try:
+            self.health = await check_backends(
+                ollama_url=config.OLLAMA_URL,
+                ollama_model=config.OLLAMA_MODEL,
+                tts_url=config.TTS_URL,
+                stt_url=config.STT_URL,
+            )
+            log_health(self.health)
+        except Exception as exc:  # a probe failure must never block the conversation
+            logger.warning("Backend health check failed: %s", exc)
+        return self.health
 
     async def apply_backends(self) -> str:
         """Apply Ollama/TTS config changes live (no restart).
@@ -439,7 +510,13 @@ class OllamaConversationHandler(AsyncStreamHandler):
                 "Applied backends live: ollama=%s tts=%s voice=%s",
                 config.OLLAMA_URL, config.TTS_BACKEND, getattr(config, "TTS_VOICE", ""),
             )
-            return "Applied backend settings (no restart)."
+            # Re-probe so the settings page reports the URL the user just saved,
+            # rather than the state of the previous one.
+            health = await self.refresh_health()
+            if not health.ok:
+                down = ", ".join(p.name for p in health.probes if not p.ok)
+                return f"Applied backend settings (no restart). Still unreachable: {down}."
+            return "Applied backend settings (no restart). All backends reachable."
         except Exception as exc:
             logger.error("Failed to apply backends: %s", exc)
             return f"Failed to apply backends: {exc}"

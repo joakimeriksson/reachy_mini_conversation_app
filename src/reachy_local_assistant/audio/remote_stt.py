@@ -7,7 +7,7 @@ reply's critical path; a failure just leaves the audio in history (graceful).
 """
 from __future__ import annotations
 import logging
-from typing import Optional, Tuple
+from typing import Tuple, Optional
 
 import numpy as np
 from numpy.typing import NDArray

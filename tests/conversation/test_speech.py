@@ -11,7 +11,7 @@ class FakeTts:
         self.rate = rate
         self.seen = []
 
-    def synthesize(self, text, voice=None, language=None):
+    def synthesize(self, text, voice=None, language=None, language_hint=None):
         self.seen.append(text)
         yield self.rate, np.zeros(max(1, len(text)), dtype=np.int16)
 
@@ -33,14 +33,33 @@ async def test_passes_voice_and_language_through():
     seen = {}
 
     class Recorder(FakeTts):
-        def synthesize(self, text, voice=None, language=None):
+        def synthesize(self, text, voice=None, language=None, language_hint=None):
             seen["voice"] = voice
             seen["language"] = language
+            seen["language_hint"] = language_hint
             return super().synthesize(text)
 
     async for _ in stream_sentences(Recorder(), "Hej.", voice="sv_female", language="sv", should_stop=lambda: False):
         pass
-    assert seen == {"voice": "sv_female", "language": "sv"}
+    assert seen == {"voice": "sv_female", "language": "sv", "language_hint": None}
+
+
+@pytest.mark.asyncio
+async def test_the_hint_reaches_every_sentence():
+    """Splitting shortens each sentence, which is when the hint matters most."""
+    seen = []
+
+    class Recorder(FakeTts):
+        def synthesize(self, text, voice=None, language=None, language_hint=None):
+            seen.append((text, language_hint))
+            return super().synthesize(text)
+
+    async for _ in stream_sentences(
+        Recorder(), "Absolut. Visst.", voice=None, language=None,
+        language_hint="sv", should_stop=lambda: False,
+    ):
+        pass
+    assert seen == [("Absolut.", "sv"), ("Visst.", "sv")]
 
 
 @pytest.mark.asyncio

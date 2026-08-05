@@ -25,6 +25,7 @@ async def stream_sentences(
     voice: Optional[str],
     language: Optional[str],
     should_stop: Callable[[], bool],
+    language_hint: Optional[str] = None,
     loop: Optional[asyncio.AbstractEventLoop] = None,
     executor: Optional[Executor] = None,
 ) -> AsyncIterator[Tuple[int, NDArray[np.int16]]]:
@@ -34,11 +35,15 @@ async def stream_sentences(
     polled before each sentence and each chunk so a barge-in cuts playback promptly. The
     *should_stop* callable bridges both an ``asyncio.Event`` and a ``threading.Event``
     (pass ``event.is_set``).
+
+    *language_hint* rides along on every sentence: splitting makes each one shorter
+    and so harder to classify alone, which is exactly when the conversation's
+    language is worth falling back on.
     """
     loop = loop or asyncio.get_running_loop()
 
     def _synth(sentence: str) -> list[Tuple[int, NDArray[np.int16]]]:
-        return list(tts.synthesize(sentence, voice=voice, language=language))
+        return list(tts.synthesize(sentence, voice=voice, language=language, language_hint=language_hint))
 
     for sentence in split_sentences(text):
         if should_stop():

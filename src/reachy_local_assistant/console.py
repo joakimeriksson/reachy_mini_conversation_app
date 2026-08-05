@@ -1,9 +1,10 @@
-"""Bidirectional local audio stream with optional settings UI.
+"""Bidirectional local audio stream with the settings UI.
 
-The conversation backend is fully local (Ollama + Piper) and needs no API key.
-In headless mode there is no Gradio UI, but when a Reachy Mini Apps settings
-server is available we still expose a minimal settings page (served from this
-package's ``static/`` folder) with personality selection and MCP server config.
+The conversation backend is fully local (Ollama + a self-hosted voice server) and
+needs no API key. The app is headless — audio flows through ``robot.media`` — but
+when the Reachy Mini Apps runtime provides a settings server we serve a settings
+page from this package's ``static/`` folder: backend URLs and their reachability,
+the live conversation transcript, personality selection, and MCP servers.
 """
 
 import os
@@ -14,13 +15,13 @@ import logging
 from typing import List, Optional
 from pathlib import Path
 
-from reachy_local_assistant.stream_shim import AdditionalOutputs, audio_to_float32
 from scipy.signal import resample
 
 from reachy_mini import ReachyMini
 from reachy_mini.media.media_manager import MediaBackend
 from reachy_local_assistant.config import LOCKED_PROFILE, config
 from reachy_local_assistant.audio.dsp import to_mono
+from reachy_local_assistant.stream_shim import AdditionalOutputs, audio_to_float32
 from reachy_local_assistant.ollama_handler import OllamaConversationHandler
 from reachy_local_assistant.headless_personality_ui import mount_personality_routes
 
@@ -69,7 +70,7 @@ class LocalStream:
         self._settings_initialized = False
         self._asyncio_loop = None
 
-    # ---- Settings UI (only when API key is missing) ----
+    # ---- Settings UI ----
     def _read_env_lines(self, env_path: Path) -> list[str]:
         """Load env file contents or a template as a list of lines."""
         inst = env_path.parent
@@ -268,6 +269,19 @@ class LocalStream:
                 ready = False
             return JSONResponse({"ready": ready})
 
+        # ---------- Conversation transcript ----------
+
+        @self._settings_app.get("/history")
+        def _history(since: int = 0) -> JSONResponse:
+            """Return transcript entries newer than *since* (0 = the whole buffer)."""
+            return JSONResponse(self.handler.transcript.as_dict(since))
+
+        @self._settings_app.post("/history/clear")
+        def _history_clear() -> JSONResponse:
+            """Clear the visible transcript (does not touch the model's history)."""
+            self.handler.transcript.clear()
+            return JSONResponse({"ok": True, "latest_seq": self.handler.transcript.latest_seq()})
+
         # ---------- MCP routes ----------
 
         @self._settings_app.get("/mcp/status")
@@ -340,8 +354,24 @@ class LocalStream:
                     "tts_backend": getattr(config, "TTS_BACKEND", "remote") or "remote",
                     "tts_url": getattr(config, "TTS_URL", "") or "",
                     "tts_voice": getattr(config, "TTS_VOICE", "") or "",
+                    "health": self.handler.health.as_dict(),
                 }
             )
+
+        @self._settings_app.post("/backends/check")
+        def _backends_check() -> JSONResponse:
+            """Re-probe the backends on demand (the page's "Check" button)."""
+            loop = self._asyncio_loop
+            if loop is None:
+                return JSONResponse({"error": "Event loop not ready"}, status_code=503)
+            try:
+                import asyncio as _aio
+
+                fut = _aio.run_coroutine_threadsafe(self.handler.refresh_health(), loop)
+                return JSONResponse(fut.result(timeout=20).as_dict())
+            except Exception as e:
+                logger.error("Backend check failed: %s", e)
+                return JSONResponse({"error": str(e)}, status_code=500)
 
         class BackendsPayload(BaseModel):
             ollama_url: Optional[str] = None
@@ -513,7 +543,12 @@ class LocalStream:
                 loop.call_soon_threadsafe(task.cancel)
 
     def clear_audio_queue(self) -> None:
-        """Flush the player's appsrc to drop any queued audio immediately."""
+        """Flush the player's appsrc to drop any queued audio immediately.
+
+        Installed on the handler as ``_clear_queue`` and called from its
+        ``_flush_output`` (barge-in). The handler owns ``output_queue`` and drains
+        it itself; this only clears what already reached the robot's player.
+        """
         logger.info("User intervention: flushing player queue")
         backend = getattr(self._robot.media, "backend", None)
         audio = getattr(self._robot.media, "audio", None)
@@ -530,7 +565,6 @@ class LocalStream:
             preferred = "clear_player" if backend == MediaBackend.LOCAL else "clear_output_buffer"
             fallback = "clear_output_buffer" if preferred == "clear_player" else "clear_player"
             _try_clear(preferred) or _try_clear(fallback)
-        self.handler.output_queue = asyncio.Queue()
 
     async def record_loop(self) -> None:
         """Read mic frames from the recorder and forward them to the handler."""

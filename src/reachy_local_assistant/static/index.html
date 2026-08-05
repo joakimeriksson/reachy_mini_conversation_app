@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Reachy Mini Conversation – Settings</title>
+    <title>Reachy Local Assistant – Settings</title>
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
@@ -15,19 +15,40 @@
     <div class="container">
       <header class="hero">
         <div class="pill">Headless control</div>
-        <h1>Reachy Mini Conversation</h1>
-        <p class="subtitle">Fully local — tweak personalities and connect tools without the full UI.</p>
+        <h1>Reachy Local Assistant</h1>
+        <p class="subtitle">Fully local — watch the conversation, point at your backends, and tune personalities.</p>
       </header>
 
       <aside class="privacy-notice" role="note" aria-label="Privacy notice">
         <p>
           <strong>Runs locally:</strong>
-          speech, vision and reasoning are processed on-device via Ollama (Gemma) and Piper —
-          no audio or camera data leaves your machine for the conversation backend.
+          speech, vision and reasoning run on your own Ollama (Gemma) and voice server —
+          no audio or camera data leaves your network for the conversation backend.
         </p>
       </aside>
 
       <p id="status" class="status hidden"></p>
+
+      <div id="transcript-panel" class="panel hidden">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Conversation</p>
+            <h2>Live transcript</h2>
+          </div>
+          <span id="transcript-chip" class="chip">Idle</span>
+        </div>
+        <p class="muted">What Reachy has heard and said this session. User turns show a mic glyph until the voice server transcribes them.</p>
+        <div id="transcript-log" class="transcript-log" aria-live="polite">
+          <p class="muted small">No conversation yet — say something to Reachy.</p>
+        </div>
+        <div class="actions">
+          <button id="transcript-clear-btn" class="ghost">Clear</button>
+          <label class="chk transcript-follow">
+            <input id="transcript-follow" type="checkbox" checked />
+            <span>Auto-scroll</span>
+          </label>
+        </div>
+      </div>
 
       <div id="mcp-panel" class="panel hidden">
         <div class="panel-heading">
@@ -71,8 +92,10 @@
         </div>
         <div class="actions">
           <button id="backends-save-btn">Save &amp; apply</button>
+          <button id="backends-check-btn" class="ghost">Check connection</button>
           <p id="backends-status" class="status"></p>
         </div>
+        <ul id="backends-health" class="health-list"></ul>
       </div>
 
       <div id="personality-panel" class="panel hidden">

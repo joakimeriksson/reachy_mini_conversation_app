@@ -1,9 +1,9 @@
-"""Standalone local voice chat — talk to the Ollama + Piper pipeline, no robot.
+"""Standalone local voice chat — talk to the pipeline on a laptop, no robot.
 
 Uses your computer's microphone and speakers (sounddevice) instead of the Reachy
 robot's media, so you can exercise the conversation pipeline
-(VAD → Gemma STT → Ollama → Piper) on a laptop. Half-duplex: the mic is muted
-while it speaks.
+(VAD → Ollama/Gemma → voice-server TTS) without hardware. Half-duplex: the mic is
+muted while it speaks. Needs Ollama and the voice server running (see SETUP.md).
 
     # talk live (Ctrl+C to quit)
     python scripts/local_chat.py
@@ -41,6 +41,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from reachy_local_assistant.prompts import get_session_voice
+from reachy_local_assistant.language import LanguageHistory
 from reachy_local_assistant.audio.dsp import resample_int16, pcm16_to_wav_bytes
 from reachy_local_assistant.audio.tts import make_tts
 from reachy_local_assistant.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
@@ -149,6 +150,9 @@ class LocalVoiceChat:
         # same path as the real app/robot (incl. the Swedish Kokoro voice server).
         self._tts = make_tts()
         self._voice = get_session_voice()
+        # Conversation language, used as a tie-breaker when the voice server can't
+        # confidently classify a short reply on its own.
+        self._lang_history = LanguageHistory()
         self._vad = VadSegmenter(
             aggressiveness=args.aggressiveness, silence_ms=args.silence_ms,
             backend=config.VAD_BACKEND, threshold=config.VAD_THRESHOLD,
@@ -214,6 +218,7 @@ class LocalVoiceChat:
                 on_user_text=_show_user,
                 capture_image=self._maybe_capture,
             )
+            self._lang_history.record(turn.language, turn.user_text)
             if turn.reply:
                 print(f"🤖  Reachy: {turn.reply}\n")
                 await self._play(turn.reply, turn.language)
@@ -233,6 +238,7 @@ class LocalVoiceChat:
             # the output callback drains the buffer and feeds it to the echo canceller.
             async for src_rate, pcm in stream_sentences(
                 self._tts, text, voice=self._voice, language=language,
+                language_hint=self._lang_history.hint(),
                 should_stop=self._interrupt.is_set, loop=loop,
             ):
                 pcm16 = resample_int16(pcm, src_rate, VAD_SAMPLE_RATE)
@@ -407,7 +413,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--model", default=config.OLLAMA_MODEL, help="Ollama conversation model")
     p.add_argument("--stt-model", default=config.OLLAMA_STT_MODEL, help="Ollama audio STT model")
     p.add_argument("--ollama-url", default=config.OLLAMA_URL)
-    p.add_argument("--voice", default=config.TTS_VOICE, help="Piper voice name or .onnx path")
+    p.add_argument("--voice", default=config.TTS_VOICE, help="voice-server voice name (e.g. Stina, af_heart)")
     p.add_argument("--voice-dir", default=None)
     p.add_argument("--profile", default=None, help="Personality profile to load")
     p.add_argument("--silence-ms", type=int, default=config.VAD_SILENCE_MS,

@@ -61,6 +61,30 @@ async function connectMcp(serversText) {
   return await resp.json();
 }
 
+// ---------- Conversation transcript API ----------
+
+async function getHistory(since) {
+  try {
+    const url = new URL("/history", window.location.origin);
+    url.searchParams.set("since", String(since || 0));
+    const resp = await fetchWithTimeout(url, {}, 3000);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function clearHistory() {
+  const resp = await fetchWithTimeout(
+    new URL("/history/clear", window.location.origin),
+    { method: "POST" },
+    5000,
+  );
+  if (!resp.ok) throw new Error("clear_failed");
+  return await resp.json();
+}
+
 // ---------- Local backend (Ollama + TTS) API ----------
 
 async function getBackendsStatus() {
@@ -73,6 +97,17 @@ async function getBackendsStatus() {
   } catch (e) {
     return null;
   }
+}
+
+async function checkBackends() {
+  const resp = await fetchWithTimeout(
+    new URL("/backends/check", window.location.origin),
+    { method: "POST" },
+    25000,
+  );
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || "check_failed");
+  return data;
 }
 
 async function saveBackends(payload) {
@@ -232,13 +267,126 @@ async function init() {
     }
   });
 
+  // ---------- Conversation transcript ----------
+  const transcriptPanel = document.getElementById("transcript-panel");
+  const transcriptLog = document.getElementById("transcript-log");
+  const transcriptChip = document.getElementById("transcript-chip");
+  const transcriptClearBtn = document.getElementById("transcript-clear-btn");
+  const transcriptFollow = document.getElementById("transcript-follow");
+
+  // Track the highest seq rendered so each poll asks only for what is new; the
+  // server keeps seq monotonic across clears so this never has to reset.
+  let transcriptSeq = 0;
+  let transcriptGeneration = 0;
+  const rendered = new Map();
+
+  function resetTranscriptView(message) {
+    transcriptSeq = 0;
+    rendered.clear();
+    transcriptLog.innerHTML = message ? `<p class="muted small">${message}</p>` : "";
+    transcriptChip.textContent = "Idle";
+  }
+
+  function renderMessage(msg) {
+    // A pending user turn is upgraded in place once Whisper transcribes it, so
+    // re-render the existing node rather than appending a duplicate.
+    let el = rendered.get(msg.seq);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = `turn turn-${msg.role === "assistant" ? "assistant" : "user"}`;
+      const who = document.createElement("span");
+      who.className = "turn-role";
+      who.textContent = msg.role === "assistant" ? "Reachy" : "You";
+      const body = document.createElement("p");
+      body.className = "turn-text";
+      el.appendChild(who);
+      el.appendChild(body);
+      transcriptLog.appendChild(el);
+      rendered.set(msg.seq, el);
+    }
+    el.querySelector(".turn-text").textContent = msg.content;
+  }
+
+  async function pollTranscript() {
+    const data = await getHistory(transcriptSeq);
+    if (!data) return;
+
+    // seq stays monotonic across clears, so a bumped generation is the only
+    // signal that the conversation was reset (here, another tab, or a
+    // personality switch). Drop everything and refetch from the start.
+    if (transcriptGeneration && data.generation !== transcriptGeneration) {
+      transcriptGeneration = data.generation;
+      resetTranscriptView("Conversation reset.");
+      return;
+    }
+    transcriptGeneration = data.generation;
+
+    if (Array.isArray(data.messages) && data.messages.length) {
+      const placeholder = transcriptLog.querySelector(".muted");
+      if (placeholder) placeholder.remove();
+      for (const msg of data.messages) renderMessage(msg);
+      transcriptSeq = data.latest_seq;
+      if (transcriptFollow.checked) transcriptLog.scrollTop = transcriptLog.scrollHeight;
+    }
+    // Count what is on screen, not latest_seq: that keeps counting across a
+    // clear (it must stay monotonic for polling) and would report stale turns.
+    const shown = rendered.size;
+    transcriptChip.textContent = shown ? `${shown} turn${shown === 1 ? "" : "s"}` : "Idle";
+  }
+
+  show(transcriptPanel, true);
+  await pollTranscript();
+  setInterval(pollTranscript, 1500);
+
+  transcriptClearBtn.addEventListener("click", async () => {
+    try {
+      await clearHistory();
+      // Adopt the new generation here so our own clear doesn't trip the
+      // "reset elsewhere" branch on the next poll.
+      const data = await getHistory(0);
+      if (data) transcriptGeneration = data.generation;
+      resetTranscriptView("Cleared.");
+    } catch (e) {}
+  });
+
   // ---------- Local backend panel (Ollama + TTS URLs) ----------
   const backendsPanel = document.getElementById("backends-panel");
   const ollamaUrl = document.getElementById("ollama-url");
   const ttsUrl = document.getElementById("tts-url");
   const ttsVoice = document.getElementById("tts-voice");
   const backendsSaveBtn = document.getElementById("backends-save-btn");
+  const backendsCheckBtn = document.getElementById("backends-check-btn");
   const backendsStatus = document.getElementById("backends-status");
+  const backendsHealth = document.getElementById("backends-health");
+
+  // A down backend is otherwise invisible: the robot listens, thinks, and says
+  // nothing. Render each probe so the missing service names itself.
+  function renderHealth(health) {
+    backendsHealth.innerHTML = "";
+    if (!health || !Array.isArray(health.probes)) return;
+    for (const probe of health.probes) {
+      const li = document.createElement("li");
+      li.className = probe.ok ? "health-item ok" : "health-item error";
+
+      const name = document.createElement("span");
+      name.className = "health-name";
+      name.textContent = `${probe.ok ? "✓" : "✗"} ${probe.name}`;
+      li.appendChild(name);
+
+      const detail = document.createElement("span");
+      detail.className = "health-detail";
+      detail.textContent = probe.detail || "";
+      li.appendChild(detail);
+
+      if (!probe.ok && probe.hint) {
+        const hint = document.createElement("span");
+        hint.className = "health-hint";
+        hint.textContent = `→ ${probe.hint}`;
+        li.appendChild(hint);
+      }
+      backendsHealth.appendChild(li);
+    }
+  }
 
   show(backendsPanel, true);
   try {
@@ -247,6 +395,7 @@ async function init() {
       ollamaUrl.value = st.ollama_url || "";
       ttsUrl.value = st.tts_url || "";
       ttsVoice.value = st.tts_voice || "";
+      renderHealth(st.health);
     }
   } catch (e) {}
 
@@ -261,8 +410,26 @@ async function init() {
       });
       backendsStatus.textContent = res.status || "Saved.";
       backendsStatus.className = "status ok";
+      const st = await getBackendsStatus();
+      if (st) renderHealth(st.health);
     } catch (e) {
       backendsStatus.textContent = `Failed: ${e.message}`;
+      backendsStatus.className = "status error";
+    }
+  });
+
+  backendsCheckBtn.addEventListener("click", async () => {
+    backendsStatus.textContent = "Checking...";
+    backendsStatus.className = "status";
+    try {
+      const health = await checkBackends();
+      renderHealth(health);
+      backendsStatus.textContent = health.ok
+        ? "All backends reachable."
+        : "Some backends are unreachable — see below.";
+      backendsStatus.className = health.ok ? "status ok" : "status error";
+    } catch (e) {
+      backendsStatus.textContent = `Check failed: ${e.message}`;
       backendsStatus.className = "status error";
     }
   });

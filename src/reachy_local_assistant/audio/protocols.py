@@ -16,9 +16,17 @@ class TtsBackend(Protocol):
     """Text-to-speech: yield ``(sample_rate, int16 PCM)`` chunks for a piece of text."""
 
     def synthesize(
-        self, text: str, voice: Optional[str] = None, language: Optional[str] = None
+        self,
+        text: str,
+        voice: Optional[str] = None,
+        language: Optional[str] = None,
+        language_hint: Optional[str] = None,
     ) -> Iterator[Tuple[int, NDArray[np.int16]]]:
-        """Yield ``(sample_rate, int16 PCM)`` chunks for *text*."""
+        """Yield ``(sample_rate, int16 PCM)`` chunks for *text*.
+
+        *language* is authoritative; *language_hint* is the conversation's language,
+        advisory, used only when the backend cannot classify *text* confidently.
+        """
         ...
 
 

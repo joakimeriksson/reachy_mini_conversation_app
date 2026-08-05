@@ -173,43 +173,47 @@ class Config:
     REACHY_MINI_CUSTOM_PROFILE = LOCKED_PROFILE or os.getenv("REACHY_MINI_CUSTOM_PROFILE")
     MCP_SERVER_URLS = os.getenv("MCP_SERVER_URLS")
 
-    # --- Local backend: Ollama (Gemma audio LLM/STT) + Piper TTS ---
+    # --- Backend settings (Ollama + the remote voice server) ---
+    # These are declared here but ASSIGNED ONLY in reload(), which runs once at
+    # import and again after the robot's per-instance .env is loaded. Having a
+    # single assignment site is deliberate: when the defaults were written out
+    # twice, editing one copy silently reverted the other on every restart.
+
     # Base URL of the Ollama server. The native API lives at this root; the
     # OpenAI-compatible chat API at "<url>/v1".
-    OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    # Conversation model — must support tool calling (and, for direct audio STT,
+    OLLAMA_URL: str
+    # Conversation model — must support tool calling (and, for direct audio,
     # audio input). The tag is whatever the user has pulled locally.
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:latest")
-    # Model used for speech-to-text. Defaults to OLLAMA_MODEL (one audio-capable
-    # model for both). Override to use a separate STT model if desired.
-    OLLAMA_STT_MODEL = os.getenv("OLLAMA_STT_MODEL") or OLLAMA_MODEL
+    OLLAMA_MODEL: str
+    # Model used for speech-to-text when OLLAMA_DIRECT_AUDIO is off.
+    OLLAMA_STT_MODEL: str
     # Generation tuning (passed to Ollama via `options`).
-    OLLAMA_TEMPERATURE = _env_opt_float("OLLAMA_TEMPERATURE")  # None -> model default
-    OLLAMA_NUM_CTX = _env_int("OLLAMA_NUM_CTX", 0)  # 0 -> model default
+    OLLAMA_TEMPERATURE: float | None  # None -> model default
+    OLLAMA_NUM_CTX: int  # 0 -> model default
     # How long Ollama keeps the model loaded between calls (e.g. "5m", "-1" = forever).
-    OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
+    OLLAMA_KEEP_ALIVE: str
     # Enable chain-of-thought "thinking" for the chat model (slower, sometimes better).
-    OLLAMA_THINK = _env_flag("OLLAMA_THINK", default=False)
+    OLLAMA_THINK: bool
     # Feed the user's audio straight into the chat model (one call: speech -> reply)
     # instead of a separate STT pass. ~2x lower LLM latency and the model hears tone,
-    # but there's no separate transcript and TTS language is auto-detected from the reply.
-    OLLAMA_DIRECT_AUDIO = _env_flag("OLLAMA_DIRECT_AUDIO", default=True)
+    # but there's no separate transcript and TTS language is auto-detected.
+    OLLAMA_DIRECT_AUDIO: bool
 
-    # --- Text-to-speech (remote voice server, OpenAI-compatible /v1/audio/speech) ---
-    # Piper was removed; TTS is always the external voice server (see
-    # scripts/voice_server.py). Set TTS_URL to the server; profiles pick a voice
-    # via voice.txt, otherwise TTS_VOICE is the default (e.g. "Stina").
-    TTS_BACKEND = (os.getenv("TTS_BACKEND", "remote") or "remote").strip().lower()
-    TTS_URL = os.getenv("TTS_URL", "")  # e.g. http://voicehost:8880/v1/audio/speech
-    TTS_MODEL = os.getenv("TTS_MODEL", "tts-1")
-    TTS_VOICE = os.getenv("TTS_VOICE", "Stina")
-    TTS_FORMAT = os.getenv("TTS_FORMAT", "wav")  # wav/flac/ogg (decoded via soundfile)
-    TTS_API_KEY = os.getenv("TTS_API_KEY")  # optional bearer token
-
+    # Text-to-speech is always the external voice server (see scripts/voice_server.py).
+    # TTS_BACKEND is vestigial — kept so existing .env files don't error.
+    TTS_BACKEND: str
+    TTS_URL: str  # e.g. http://voicehost:8880/v1/audio/speech
+    TTS_MODEL: str
+    # Must match the running voice-server engine: base Kokoro uses af_heart-style
+    # names, the Swedish kokoro-svml packs use names like "Stina". The default is
+    # the base-Kokoro one so a stock setup speaks instead of erroring every turn.
+    TTS_VOICE: str
+    TTS_FORMAT: str  # wav/flac/ogg (decoded via soundfile)
+    TTS_API_KEY: str | None  # optional bearer token
     # Whisper STT on the same voice server (/v1/audio/transcriptions). In direct-audio
     # mode the app transcribes the turn AFTER replying and keeps the TEXT in history
     # (KV-cache-friendly, no audio bloat). Defaults to the TTS host; empty = keep audio.
-    STT_URL = os.getenv("STT_URL") or (TTS_URL.replace("/audio/speech", "/audio/transcriptions") if TTS_URL else "")
+    STT_URL: str
 
     # VAD tuning (see audio/vad.py).
     VAD_AGGRESSIVENESS = _env_int("VAD_AGGRESSIVENESS", 2)
@@ -311,14 +315,14 @@ class Config:
 
     @classmethod
     def reload(cls) -> None:
-        """Re-read env-driven backend settings after a late ``load_dotenv``.
+        """(Re-)read the env-driven backend settings.
 
-        The OLLAMA_/TTS_ class attributes are read at import — before the robot's
-        per-instance ``.env`` exists — so a saved OLLAMA_URL / TTS_URL / voice
-        would land in ``os.environ`` but never reach ``config`` (and ``make_tts()``
-        reads ``config.TTS_URL``). ``LocalStream.launch()`` calls this after loading
-        the instance .env so settings survive stop/start. Keep in sync with the
-        OLLAMA_/TTS_ defaults above.
+        The single assignment site for every OLLAMA_/TTS_/STT_ attribute. Called
+        once at import, and again by ``LocalStream.launch()`` after loading the
+        robot's per-instance ``.env`` — which is created long after import, so
+        without the second call a saved OLLAMA_URL / TTS_URL / voice would reach
+        ``os.environ`` but never ``config`` (and ``make_tts()`` reads
+        ``config.TTS_URL``), silently forgetting settings on every restart.
         """
         cls.OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
         cls.OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:latest")
@@ -331,12 +335,13 @@ class Config:
         cls.TTS_BACKEND = (os.getenv("TTS_BACKEND", "remote") or "remote").strip().lower()
         cls.TTS_URL = os.getenv("TTS_URL", "")
         cls.TTS_MODEL = os.getenv("TTS_MODEL", "tts-1")
-        cls.TTS_VOICE = os.getenv("TTS_VOICE", "Stina")
+        cls.TTS_VOICE = os.getenv("TTS_VOICE", "af_heart")
         cls.TTS_FORMAT = os.getenv("TTS_FORMAT", "wav")
         cls.TTS_API_KEY = os.getenv("TTS_API_KEY")
         cls.STT_URL = os.getenv("STT_URL") or (cls.TTS_URL.replace("/audio/speech", "/audio/transcriptions") if cls.TTS_URL else "")
 
 
+Config.reload()  # populate the backend settings from the environment at import
 config = Config()
 
 

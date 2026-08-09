@@ -178,10 +178,33 @@ class OllamaConversationHandler(AsyncStreamHandler):
 
         while not self._stop.is_set():
             try:
-                utterance = await self._utterances.get()
+                # Bounded wait so the loop can notice prolonged silence: a desk
+                # robot left alone otherwise keeps the mic hot and Gemma warm
+                # forever. On timeout we only *check* inactivity, then re-wait.
+                utterance = await asyncio.wait_for(self._utterances.get(), timeout=30.0)
+            except asyncio.TimeoutError:
+                if await self._check_inactivity():
+                    break
+                continue
             except asyncio.CancelledError:
                 break
             await self._handle_turn(utterance)
+
+    async def _check_inactivity(self) -> bool:
+        """Go to sleep after the configured idle period; True when shutting down."""
+        timeout_min = config.INACTIVITY_TIMEOUT_MIN
+        if timeout_min <= 0 or self.deps.go_to_sleep is None:
+            return False
+        idle_s = asyncio.get_event_loop().time() - self.last_activity_time
+        if idle_s < timeout_min * 60.0:
+            return False
+        logger.info("No activity for %.1f minutes; going to sleep.", idle_s / 60.0)
+        try:
+            await asyncio.to_thread(self.deps.go_to_sleep)
+        except Exception as e:
+            logger.error("Inactivity sleep failed: %s", e)
+        self._stop.set()
+        return True
 
     async def _handle_turn(self, utterance: NDArray[np.int16]) -> None:
         assert self._stt and self._chat

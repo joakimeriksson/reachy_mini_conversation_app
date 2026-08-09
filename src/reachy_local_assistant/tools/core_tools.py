@@ -8,7 +8,7 @@ import inspect
 import logging
 import importlib
 import importlib.util
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Callable
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -66,6 +66,10 @@ class ToolDependencies:
     head_wobbler: Any | None = None  # HeadWobbler for audio-reactive motion
     motion_duration_s: float = 1.0
     instance_path: str | Path | None = None  # app instance dir (long-term memory store)
+    # Puts the robot into its sleep pose and stops the app; installed by main.run()
+    # (needs the app_stop_event, which only main has). Used by the go_to_sleep tool
+    # and the inactivity timeout. None in runners with no lifecycle (local_chat).
+    go_to_sleep: Callable[[], Dict[str, Any]] | None = None
 
 
 # Tool base class

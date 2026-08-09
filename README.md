@@ -99,7 +99,7 @@ uv sync --group dev                # dev tooling (pytest/ruff/mypy)
 
 | Extra | Purpose |
 |-------|---------|
-| `mediapipe_vision` | MediaPipe landmarks for the `mediapipe` head-tracker (aiming the head) |
+| `mediapipe_vision` | CLIENT-side mediapipe head-tracker (`--head-tracker mediapipe`, dev only) — the robot tracks faces daemon-side without it |
 | `localdev` | `scripts/local_chat.py` — talk via your computer's mic/speaker/webcam (no robot). Not shipped to the robot. |
 | `aec` | WebRTC echo cancellation (livekit) — required for barge-in on open speakers. |
 | `silero` | Neural VAD backend (`VAD_BACKEND=silero`); better at speech-vs-noise than the default. |
@@ -217,10 +217,11 @@ provides the body over WiFi. Use `.env.robot.example` as your config template.
 | `camera` | Capture a frame; the multimodal LLM (Gemma) sees it directly. |
 | `remember` / `forget` | Persist / remove a long-term fact about the user. |
 | `move_head` | Queue a head pose (left/right/up/down/front). |
-| `head_tracking` | Toggle head-tracking offsets (position only, no recognition). |
+| `head_tracking` | Toggle face tracking — daemon-side on the robot (no client mediapipe needed). |
 | `dance` / `stop_dance` | Play / clear a dance from `reachy_mini_dances_library`. |
 | `play_emotion` / `stop_emotion` | Play / clear a recorded emotion (open HF dataset). |
 | `task_status` / `task_cancel` | Inspect / cancel a long-running background tool. |
+| `go_to_sleep` | Sleep pose + stop the app ("Reachy, go to sleep"). Also fires after `INACTIVITY_TIMEOUT_MIN` of silence. |
 
 External tools from configured `MCP_SERVER_URLS` are exposed automatically.
 

@@ -4,3 +4,4 @@ play_emotion
 stop_emotion
 camera
 move_head
+go_to_sleep

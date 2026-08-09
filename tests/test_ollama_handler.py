@@ -265,3 +265,48 @@ async def test_noise_gate_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> No
 
     handler._speak.assert_awaited_once()
     handler._chat.drop_last_exchange.assert_not_called()
+
+
+# --- inactivity timeout ------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_inactivity_triggers_sleep_and_stops(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A desk robot left alone must go to sleep, not idle forever."""
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.INACTIVITY_TIMEOUT_MIN", 0.001)
+    handler = _handler()
+    handler.deps.go_to_sleep = MagicMock(return_value={"status": "sleeping"})
+    handler.last_activity_time -= 10.0  # well past the 0.001-minute threshold
+
+    assert await handler._check_inactivity() is True
+
+    handler.deps.go_to_sleep.assert_called_once()
+    assert handler._stop.is_set()
+
+
+@pytest.mark.asyncio
+async def test_recent_activity_keeps_the_app_awake(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The timeout counts from the LAST activity, not from startup."""
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.INACTIVITY_TIMEOUT_MIN", 60.0)
+    handler = _handler()
+    handler.deps.go_to_sleep = MagicMock()
+
+    assert await handler._check_inactivity() is False
+
+    handler.deps.go_to_sleep.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_inactivity_disabled_or_unwired_is_a_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
+    """0 disables the timeout; runners with no sleep hook must never stop."""
+    handler = _handler()
+
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.INACTIVITY_TIMEOUT_MIN", 0.0)
+    handler.deps.go_to_sleep = MagicMock()
+    handler.last_activity_time -= 10_000.0
+    assert await handler._check_inactivity() is False
+
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.INACTIVITY_TIMEOUT_MIN", 0.001)
+    handler.deps.go_to_sleep = None
+    assert await handler._check_inactivity() is False
+    assert not handler._stop.is_set()

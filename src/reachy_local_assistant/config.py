@@ -218,6 +218,10 @@ class Config:
     # fires on any sustained sound; this is the "was that actually words?" check
     # that stops Reachy answering chair scrapes. Off = never drop turns.
     NOISE_GATE: bool
+    # Minutes of silence before Reachy goes to sleep and the app stops
+    # (0 = never). Matches upstream's default of 24 h — a desk robot left
+    # alone should not keep the mic hot and the model warm forever.
+    INACTIVITY_TIMEOUT_MIN: float
 
     # VAD tuning (see audio/vad.py).
     VAD_AGGRESSIVENESS = _env_int("VAD_AGGRESSIVENESS", 2)
@@ -344,6 +348,7 @@ class Config:
         cls.TTS_API_KEY = os.getenv("TTS_API_KEY")
         cls.STT_URL = os.getenv("STT_URL") or (cls.TTS_URL.replace("/audio/speech", "/audio/transcriptions") if cls.TTS_URL else "")
         cls.NOISE_GATE = _env_flag("NOISE_GATE", default=True)
+        cls.INACTIVITY_TIMEOUT_MIN = _env_opt_float("INACTIVITY_TIMEOUT_MIN") or 1440.0
 
 
 Config.reload()  # populate the backend settings from the environment at import

@@ -105,6 +105,42 @@ def run(
         instance_path=instance_path,
     )
 
+    def go_to_sleep() -> dict[str, str]:
+        """Sleep pose + clean app stop; used by the tool and the inactivity timeout.
+
+        Runs off the event loop (asyncio.to_thread) — it moves motors and talks to
+        the daemon. Under the apps runtime we also POST stop-current-app so the
+        runtime records a clean stop rather than a crash.
+        """
+        result: dict[str, str] = {"status": "sleeping"}
+        try:
+            robot.goto_sleep()
+        except Exception as e:
+            logger.warning("goto_sleep motion failed: %s", e)
+            result["motion_error"] = str(e)
+        client = getattr(robot, "client", None)
+        host, port = getattr(client, "host", None), getattr(client, "port", None)
+        if host and port:
+            try:
+                import urllib.request
+
+                req = urllib.request.Request(f"http://{host}:{port}/api/apps/stop-current-app", method="POST")
+                with urllib.request.urlopen(req, timeout=2.0):
+                    pass
+                result["app_stopped"] = "daemon"
+                return result
+            except Exception as e:  # standalone run, or a daemon without the route
+                logger.info("Daemon stop-current-app unavailable (%s); stopping locally", e)
+        if app_stop_event is not None:
+            app_stop_event.set()
+            result["app_stopped"] = "stop_event"
+        else:
+            stream_manager.close()
+            result["app_stopped"] = "stream_closed"
+        return result
+
+    deps.go_to_sleep = go_to_sleep
+
     # Each async service → its own thread/loop
     movement_manager.start()
     head_wobbler.start()

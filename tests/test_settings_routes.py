@@ -96,3 +96,37 @@ def test_backends_check_without_a_loop_reports_not_ready(client: TestClient) -> 
     resp = client.post("/backends/check")
 
     assert resp.status_code == 503
+
+
+def test_mcp_status_reports_tools_shape(client: TestClient) -> None:
+    """The page renders per-tool checkboxes from this payload."""
+    body = client.get("/mcp/status").json()
+
+    assert body["tools"] == []  # no MCP manager in tests -> empty, not missing
+    assert body["tool_count"] == 0
+
+
+def test_mcp_tools_toggle_persists_and_filters(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unticking a tool must hide it from the model on the next turn."""
+    from reachy_local_assistant.tools import core_tools
+    from reachy_local_assistant.config import config
+
+    monkeypatch.setattr(
+        core_tools, "ALL_TOOL_SPECS",
+        [{"type": "function", "name": "camera"}, {"type": "function", "name": "mcp_lights"}],
+    )
+    monkeypatch.setattr(config, "MCP_DISABLED_TOOLS", "", raising=False)
+
+    resp = client.post("/mcp/tools", json={"disabled": ["mcp_lights", " ", "mcp_lights"]})
+
+    assert resp.json() == {"ok": True, "disabled": ["mcp_lights"]}
+    assert config.MCP_DISABLED_TOOLS == "mcp_lights"
+    # This is what ollama_chat calls each turn — the toggle must bite here.
+    assert [s["name"] for s in core_tools.get_tool_specs()] == ["camera"]
+
+    # Re-enabling clears the exclusion without a restart.
+    client.post("/mcp/tools", json={"disabled": []})
+    assert config.MCP_DISABLED_TOOLS == ""
+    assert [s["name"] for s in core_tools.get_tool_specs()] == ["camera", "mcp_lights"]

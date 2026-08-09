@@ -289,9 +289,21 @@ def _initialize_tools() -> None:
 _initialize_tools()
 
 
+def disabled_tool_names() -> set[str]:
+    """Tool names switched off in the settings UI (``MCP_DISABLED_TOOLS``)."""
+    raw = getattr(config, "MCP_DISABLED_TOOLS", "") or ""
+    return {name.strip() for name in raw.split(",") if name.strip()}
+
+
 def get_tool_specs(exclusion_list: list[str] = []) -> list[Dict[str, Any]]:
-    """Get tool specs, optionally excluding some tools."""
-    return [spec for spec in ALL_TOOL_SPECS if spec.get("name") not in exclusion_list]
+    """Get tool specs, minus exclusions and tools switched off in the settings UI.
+
+    Called on every LLM turn, so a toggle on the settings page takes effect on
+    the next utterance — no session restart. The tool stays registered (and
+    dispatchable); the model simply never sees its schema.
+    """
+    hidden = disabled_tool_names().union(exclusion_list)
+    return [spec for spec in ALL_TOOL_SPECS if spec.get("name") not in hidden]
 
 
 # Dispatcher

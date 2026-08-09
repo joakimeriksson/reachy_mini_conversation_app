@@ -67,6 +67,10 @@
           <button id="mcp-connect-btn">Connect</button>
           <p id="mcp-status" class="status"></p>
         </div>
+        <div id="mcp-tools-section" class="hidden">
+          <p class="muted small">Tools offered to the model — untick to hide one (applies from the next turn; every enabled tool's schema is sent to Gemma on each call, so fewer is faster).</p>
+          <div id="mcp-tools" class="checkbox-grid"></div>
+        </div>
       </div>
 
       <div id="backends-panel" class="panel hidden">

@@ -288,9 +288,40 @@ class LocalStream:
         def _mcp_status() -> JSONResponse:
             servers = getattr(config, "MCP_SERVER_URLS", None) or ""
             from reachy_local_assistant.mcp_client import _manager
+            from reachy_local_assistant.tools.core_tools import ALL_TOOLS, disabled_tool_names
 
-            tool_count = len(_manager._tool_names) if _manager is not None else 0
-            return JSONResponse({"servers": servers, "tool_count": tool_count})
+            disabled = disabled_tool_names()
+            tools = []
+            if _manager is not None:
+                for name in _manager._tool_names:
+                    tool = ALL_TOOLS.get(name)
+                    tools.append(
+                        {
+                            "name": name,
+                            "description": getattr(tool, "description", "") if tool else "",
+                            "enabled": name not in disabled,
+                        }
+                    )
+            return JSONResponse({"servers": servers, "tool_count": len(tools), "tools": tools})
+
+        class McpToolsPayload(BaseModel):
+            disabled: List[str] = []
+
+        @self._settings_app.post("/mcp/tools")
+        def _mcp_tools(payload: McpToolsPayload) -> JSONResponse:
+            """Switch individual MCP tools on/off without disconnecting the server.
+
+            Persists to the instance .env and applies on the next turn —
+            get_tool_specs() re-reads the disabled set on every LLM call.
+            """
+            csv_value = ",".join(dict.fromkeys(n.strip() for n in payload.disabled if n.strip()))
+            config.MCP_DISABLED_TOOLS = csv_value
+            if csv_value:
+                os.environ["MCP_DISABLED_TOOLS"] = csv_value
+            else:
+                os.environ.pop("MCP_DISABLED_TOOLS", None)
+            self._persist_env_var("MCP_DISABLED_TOOLS", csv_value or None)
+            return JSONResponse({"ok": True, "disabled": csv_value.split(",") if csv_value else []})
 
         class McpConnectPayload(BaseModel):
             servers: str

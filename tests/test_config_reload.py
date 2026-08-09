@@ -124,3 +124,14 @@ def test_noise_gate_is_on_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NOISE_GATE", "0")
     Config.reload()
     assert Config.NOISE_GATE is False
+
+
+def test_mcp_disabled_tools_defaults_empty_and_reloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The settings page persists this to the instance .env; reload must see it."""
+    monkeypatch.delenv("MCP_DISABLED_TOOLS", raising=False)
+    Config.reload()
+    assert Config.MCP_DISABLED_TOOLS == ""
+
+    monkeypatch.setenv("MCP_DISABLED_TOOLS", "mcp_search,mcp_weather")
+    Config.reload()
+    assert Config.MCP_DISABLED_TOOLS == "mcp_search,mcp_weather"

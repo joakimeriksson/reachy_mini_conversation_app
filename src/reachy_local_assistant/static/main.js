@@ -61,6 +61,20 @@ async function connectMcp(serversText) {
   return await resp.json();
 }
 
+async function saveMcpTools(disabledNames) {
+  const resp = await fetchWithTimeout(
+    new URL("/mcp/tools", window.location.origin),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ disabled: disabledNames }),
+    },
+    5000,
+  );
+  if (!resp.ok) throw new Error("save_failed");
+  return await resp.json();
+}
+
 // ---------- Conversation transcript API ----------
 
 async function getHistory(since) {
@@ -233,6 +247,51 @@ async function init() {
   const mcpConnectBtn = document.getElementById("mcp-connect-btn");
   const mcpStatus = document.getElementById("mcp-status");
   const mcpChip = document.getElementById("mcp-chip");
+  const mcpToolsSection = document.getElementById("mcp-tools-section");
+  const mcpToolsGrid = document.getElementById("mcp-tools");
+
+  // One checkbox per registered MCP tool. Unticking hides the tool's schema
+  // from the model on the next turn — the server stays connected, so this is
+  // how you keep a broad server without paying for its whole tool list.
+  function renderMcpTools(tools) {
+    mcpToolsGrid.innerHTML = "";
+    const hasTools = Array.isArray(tools) && tools.length > 0;
+    show(mcpToolsSection, hasTools);
+    if (!hasTools) return;
+
+    async function persist() {
+      const disabled = [...mcpToolsGrid.querySelectorAll("input[type=checkbox]")]
+        .filter((cb) => !cb.checked)
+        .map((cb) => cb.dataset.tool);
+      try {
+        await saveMcpTools(disabled);
+        const enabledCount = tools.length - disabled.length;
+        mcpStatus.textContent = `${enabledCount}/${tools.length} tool(s) offered to the model.`;
+        mcpStatus.className = "status ok";
+      } catch (e) {
+        mcpStatus.textContent = "Failed to save tool selection.";
+        mcpStatus.className = "status error";
+      }
+    }
+
+    for (const tool of tools) {
+      const wrap = document.createElement("div");
+      wrap.className = "chk";
+      if (tool.description) wrap.title = tool.description;
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!tool.enabled;
+      cb.dataset.tool = tool.name;
+      cb.id = `mcp-tool-${tool.name}`;
+      cb.addEventListener("change", persist);
+      const label = document.createElement("label");
+      label.htmlFor = cb.id;
+      label.textContent = tool.name;
+      wrap.appendChild(cb);
+      wrap.appendChild(label);
+      mcpToolsGrid.appendChild(wrap);
+    }
+  }
 
   show(mcpPanel, true);
   try {
@@ -246,6 +305,7 @@ async function init() {
       mcpChip.textContent = "Connected";
       mcpChip.className = "chip chip-ok";
     }
+    renderMcpTools(mcpState.tools);
   } catch (e) {}
 
   mcpConnectBtn.addEventListener("click", async () => {
@@ -259,6 +319,9 @@ async function init() {
       mcpStatus.className = "status ok";
       mcpChip.textContent = res.tool_count > 0 ? "Connected" : "Optional";
       mcpChip.className = res.tool_count > 0 ? "chip chip-ok" : "chip";
+      // Newly registered tools carry their persisted on/off state.
+      const st = await getMcpStatus();
+      renderMcpTools(st.tools);
     } catch (e) {
       mcpStatus.textContent = `Failed: ${e.message}`;
       mcpStatus.className = "status error";

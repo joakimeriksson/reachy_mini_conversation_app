@@ -13,7 +13,17 @@ class Camera(Tool):
     """Take a picture with the camera and ask a question about it."""
 
     name = "camera"
-    description = "Take a picture with the camera and ask a question about it."
+    # Wordy on purpose (ported from upstream #454): the model under-used the terse
+    # description and asked "what should I look at?" instead of just looking.
+    description = (
+        "Take a picture with the camera to see what is in front of the robot. "
+        "Use this when the user asks you to look at something, see what they are holding, "
+        "check their appearance, describe the scene, or comment on how they look. "
+        "Also use it when the user asks what you can see or wants your visual opinion. "
+        "The camera is live; each call captures the current moment. "
+        "If the user asks you to look without saying at what, do not ask for clarification — "
+        "call this tool and describe what you see."
+    )
     parameters_schema = {
         "type": "object",
         "properties": {

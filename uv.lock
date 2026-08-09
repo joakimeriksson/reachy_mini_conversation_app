@@ -3239,7 +3239,7 @@ wheels = [
 
 [[package]]
 name = "reachy-local-assistant"
-version = "0.4.11"
+version = "0.4.12"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -3252,7 +3252,6 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "reachy-mini" },
     { name = "reachy-mini-dances-library" },
-    { name = "reachy-mini-toolbox" },
     { name = "scipy" },
     { name = "soundfile" },
     { name = "webrtcvad-wheels" },
@@ -3264,6 +3263,7 @@ aec = [
 ]
 all-vision = [
     { name = "mediapipe" },
+    { name = "reachy-mini-toolbox" },
 ]
 localdev = [
     { name = "opencv-python" },
@@ -3271,6 +3271,7 @@ localdev = [
 ]
 mediapipe-vision = [
     { name = "mediapipe" },
+    { name = "reachy-mini-toolbox" },
 ]
 silero = [
     { name = "onnxruntime" },
@@ -3304,7 +3305,8 @@ requires-dist = [
     { name = "python-dotenv" },
     { name = "reachy-mini", specifier = ">=1.9.0" },
     { name = "reachy-mini-dances-library" },
-    { name = "reachy-mini-toolbox" },
+    { name = "reachy-mini-toolbox", marker = "extra == 'all-vision'" },
+    { name = "reachy-mini-toolbox", marker = "extra == 'mediapipe-vision'" },
     { name = "scipy" },
     { name = "sounddevice", marker = "extra == 'localdev'" },
     { name = "soundfile", specifier = ">=0.12" },

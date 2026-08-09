@@ -1,5 +1,4 @@
 import re
-import sys
 import logging
 from pathlib import Path
 
@@ -79,23 +78,41 @@ def get_session_instructions(instance_path: str | Path | None = None) -> str:
             logger.info(f"Loading prompt from profile '{profile}'")
         instructions_file = config.PROFILES_DIRECTORY / profile / INSTRUCTIONS_FILENAME
 
+    instructions = _read_instructions_file(instructions_file, profile or "default")
+    if instructions is None and profile:
+        # Fall back to the default prompt rather than dying: this runs not only at
+        # startup but from the settings page's "Apply", where a sys.exit(1) (a
+        # BaseException) would sail past the caller's `except Exception` and kill
+        # the whole app over one broken profile folder.
+        fallback = PROMPTS_LIBRARY_DIRECTORY / "default_prompt.txt"
+        logger.warning("Profile '%s' has no usable %s; using the default prompt", profile, INSTRUCTIONS_FILENAME)
+        instructions = _read_instructions_file(fallback, "default")
+    if instructions is None:
+        logger.error("No usable instructions found (profile %r); using a minimal built-in prompt", profile)
+        instructions = "You are Reachy Mini, a small friendly desk robot. Keep replies short and conversational."
+
+    # Expand [<name>] placeholders with content from prompts library
+    expanded_instructions = _expand_prompt_includes(instructions)
+    memory_prompt = format_memory_for_prompt(instance_path)
+    if memory_prompt:
+        return f"{memory_prompt}\n\n{expanded_instructions}"
+    return expanded_instructions
+
+
+def _read_instructions_file(instructions_file: Path, profile_name: str) -> str | None:
+    """Read a profile's instructions; None (with a warning) when missing/empty/unreadable."""
     try:
-        if instructions_file.exists():
-            instructions = instructions_file.read_text(encoding="utf-8").strip()
-            if instructions:
-                # Expand [<name>] placeholders with content from prompts library
-                expanded_instructions = _expand_prompt_includes(instructions)
-                memory_prompt = format_memory_for_prompt(instance_path)
-                if memory_prompt:
-                    return f"{memory_prompt}\n\n{expanded_instructions}"
-                return expanded_instructions
-            logger.error(f"Profile '{profile}' has empty {INSTRUCTIONS_FILENAME}")
-            sys.exit(1)
-        logger.error(f"Profile {profile} has no {INSTRUCTIONS_FILENAME}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Failed to load instructions from profile '{profile}': {e}")
-        sys.exit(1)
+        if not instructions_file.exists():
+            logger.warning("Profile '%s' has no %s", profile_name, INSTRUCTIONS_FILENAME)
+            return None
+        instructions = instructions_file.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError) as e:
+        logger.warning("Failed to load instructions from profile '%s': %s", profile_name, e)
+        return None
+    if not instructions:
+        logger.warning("Profile '%s' has empty %s", profile_name, INSTRUCTIONS_FILENAME)
+        return None
+    return instructions
 
 
 def get_session_voice(default: str | None = None) -> str:

@@ -15,7 +15,8 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
         "--head-tracker",
         choices=["mediapipe"],
         default=None,
-        help="Head-tracking backend (mediapipe, via reachy_mini_toolbox). Disabled by default.",
+        help="CLIENT-side head-tracking backend (needs the mediapipe_vision extra). "
+        "Usually unnecessary: the head_tracking tool uses the robot daemon's own tracker.",
     )
     parser.add_argument("--no-camera", default=False, action="store_true", help="Disable camera usage")
     parser.add_argument(
@@ -58,7 +59,16 @@ def initialize_camera_and_vision(
     local_webcam = getattr(args, "local_webcam", False)
     if not args.no_camera or local_webcam:
         if args.head_tracker == "mediapipe":
-            from reachy_mini_toolbox.vision import HeadTracker
+            try:
+                # Client-side tracker; no longer a core dependency because the
+                # head_tracking tool uses the daemon-side tracker in reachy-mini.
+                from reachy_mini_toolbox.vision import HeadTracker
+            except ImportError as e:
+                raise SystemExit(
+                    "--head-tracker mediapipe needs the client-side tracker: "
+                    "run `uv sync --extra mediapipe_vision`. On a real robot you "
+                    "can omit the flag — the daemon tracks faces by itself."
+                ) from e
 
             head_tracker = HeadTracker()
 

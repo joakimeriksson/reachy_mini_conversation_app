@@ -11,7 +11,7 @@ import os
 import json
 import logging
 import dataclasses
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 from reachy_local_assistant.config import config
 
@@ -198,7 +198,11 @@ class McpClientManager:
                 # Pass URL directly — fastmcp auto-detects transport
                 # (tries Streamable HTTP first, falls back to SSE)
                 client = Client(server.url, auth=auth)
-                await client.__aenter__()
+                # Entered manually (not `async with`) so the connection outlives
+                # this function; closed in shutdown. Called through Any because
+                # fastmcp's __aenter__ is untyped under the CI Python (3.12) but
+                # typed under 3.11 — a type-ignore can't be right in both.
+                await cast(Any, client).__aenter__()
                 self._clients.append(client)
 
                 tools = await client.list_tools()
@@ -229,7 +233,7 @@ class McpClientManager:
 
         for client in self._clients:
             try:
-                await client.__aexit__(None, None, None)
+                await cast(Any, client).__aexit__(None, None, None)  # see __aenter__ note
             except Exception as exc:
                 logger.debug("Error closing MCP client: %s", exc)
 

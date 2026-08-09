@@ -56,8 +56,9 @@ server**, keeping the robot/client thin.
    mic ──▶ VAD ──▶ Ollama chat (Gemma: hears audio, +tools/MCP) ──▶ voice server ──▶ speaker
                                     │                                (/v1/audio/speech)
                                     └──▶ Whisper (/v1/audio/transcriptions)
-                                         transcribes the turn after the reply,
-                                         so history stores text, not audio
+                                         transcribes each turn while the model
+                                         thinks: noise gate, language evidence,
+                                         and text (not audio) in history
 ```
 
 By default (`OLLAMA_DIRECT_AUDIO=1`) the user's audio goes **straight into the chat
@@ -163,7 +164,8 @@ No API key is required. Key variables:
 | `OLLAMA_TEMPERATURE` / `OLLAMA_NUM_CTX` / `OLLAMA_KEEP_ALIVE` | Generation + model-load tuning. |
 | `TTS_URL` | **Required.** Voice server `/v1/audio/speech`, e.g. `http://voicehost:8880/v1/audio/speech`. |
 | `TTS_VOICE` / `TTS_MODEL` / `TTS_FORMAT` | Voice name — must match the engine (`af_heart` for `kokoro`, `Stina` for `kokoro-svml`). |
-| `STT_URL` | Whisper `/v1/audio/transcriptions`. Defaults to the `TTS_URL` host; used for the text history. |
+| `STT_URL` | Whisper `/v1/audio/transcriptions`. Defaults to the `TTS_URL` host; used for the text history and the noise gate. |
+| `NOISE_GATE` | `1` (default): drop a turn when Whisper hears no words in it, so room noise never gets an answer. Needs `STT_URL`. |
 | `VAD_AGGRESSIVENESS` / `VAD_SILENCE_MS` | Voice-activity detection (raise aggressiveness if it over-listens). |
 | `VAD_BACKEND` / `VAD_THRESHOLD` | `webrtc` (default) or `silero` (neural, needs the `silero` extra). |
 | `BARGE_IN` / `AEC` | Interrupt Reachy mid-reply; echo cancellation so that works on open speakers. |

@@ -177,3 +177,32 @@ async def test_respond_returns_empty_on_backend_error(chat_mod, monkeypatch):
     _patch_client(monkeypatch, Boom())
     chat = mod.OllamaChat("m", "http://x", deps=None, system_prompt="sys")
     assert await chat.respond("hi") == ""
+
+
+def test_drop_last_exchange_removes_user_turn_and_everything_after(chat_mod, monkeypatch):
+    """The noise gate must erase the whole exchange, tool traffic included."""
+    mod, deps = chat_mod
+    chat = mod.OllamaChat("m", "http://x", deps, "sys")
+    chat._messages.extend([
+        {"role": "user", "content": "real question"},
+        {"role": "assistant", "content": "real answer"},
+        {"role": "user", "content": "", "images": [b"noise"]},
+        {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "camera"}}]},
+        {"role": "tool", "content": "{}"},
+        {"role": "assistant", "content": "reply to noise"},
+    ])
+
+    chat.drop_last_exchange()
+
+    assert [m["role"] for m in chat._messages] == ["system", "user", "assistant"]
+    assert chat._messages[-1]["content"] == "real answer"
+
+
+def test_drop_last_exchange_with_no_user_turn_is_a_no_op(chat_mod, monkeypatch):
+    """Gating before any conversation exists must not touch the system prompt."""
+    mod, deps = chat_mod
+    chat = mod.OllamaChat("m", "http://x", deps, "sys")
+
+    chat.drop_last_exchange()
+
+    assert [m["role"] for m in chat._messages] == ["system"]

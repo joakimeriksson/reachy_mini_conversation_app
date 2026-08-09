@@ -95,3 +95,14 @@ def test_as_dict_since_filters() -> None:
 
     assert [m["content"] for m in payload["messages"]] == ["two"]  # type: ignore[index,union-attr]
     assert payload["latest_seq"] == 2
+
+
+def test_remove_deletes_one_message() -> None:
+    """A gated noise turn must vanish from the page, not linger as a ghost."""
+    t = Transcript()
+    seq = t.add("user", PENDING_USER_TEXT)
+    t.add("user", "real turn")
+
+    assert t.remove(seq)
+    assert [m.content for m in t.messages()] == ["real turn"]
+    assert not t.remove(seq), "double-remove must report failure, not crash"

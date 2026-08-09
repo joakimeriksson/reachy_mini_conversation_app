@@ -47,6 +47,7 @@ from reachy_local_assistant.audio.tts import make_tts
 from reachy_local_assistant.audio.vad import FRAME_SAMPLES, VAD_SAMPLE_RATE, VadSegmenter
 from reachy_local_assistant.audio.gemma_stt import GemmaSTT
 from reachy_local_assistant.llm.ollama_chat import OllamaChat
+from reachy_local_assistant.audio.remote_stt import RemoteSTT
 from reachy_local_assistant.conversation.turn import generate_reply
 from reachy_local_assistant.conversation.speech import stream_sentences
 
@@ -134,6 +135,7 @@ class LocalVoiceChat:
         from reachy_local_assistant.config import config
 
         self._direct_audio = config.OLLAMA_DIRECT_AUDIO
+        self._noise_gate = config.NOISE_GATE
         prompt = _load_system_prompt(args.profile)
         if self._direct_audio:
             prompt += (
@@ -153,6 +155,8 @@ class LocalVoiceChat:
         # Conversation language, used as a tie-breaker when the voice server can't
         # confidently classify a short reply on its own.
         self._lang_history = LanguageHistory()
+        # Whisper on the voice server: noise gate + per-turn language evidence.
+        self._stt_remote = RemoteSTT(config.STT_URL)
         self._vad = VadSegmenter(
             aggressiveness=args.aggressiveness, silence_ms=args.silence_ms,
             backend=config.VAD_BACKEND, threshold=config.VAD_THRESHOLD,
@@ -209,6 +213,12 @@ class LocalVoiceChat:
             async def _show_user(text: str) -> None:
                 print(f"\n🧑  You:    {text or '🎤 …'}")
 
+            # Transcribe concurrently with the LLM call (direct-audio): powers the
+            # noise gate below and this turn's language hint at zero added latency.
+            transcribe_task = None
+            if self._direct_audio and self._stt_remote.enabled:
+                transcribe_task = asyncio.create_task(self._stt_remote.transcribe(utterance, VAD_SAMPLE_RATE))
+
             turn = await generate_reply(
                 self._stt,
                 self._chat,
@@ -219,6 +229,24 @@ class LocalVoiceChat:
                 capture_image=self._maybe_capture,
             )
             self._lang_history.record(turn.language, turn.user_text)
+
+            if transcribe_task is not None:
+                try:
+                    text, lang = await transcribe_task
+                except Exception as exc:
+                    text, lang = "…", ""  # Whisper down: keep the turn
+                    logger.debug("turn transcription failed: %s", exc)
+                self._lang_history.record(lang, text)
+                if text.strip():
+                    if text != "…":
+                        print(f"    📝 heard: {text}")
+                        self._chat.replace_last_user_audio_with_text(text)
+                elif self._noise_gate:
+                    # The VAD fired on room noise, not words — undo and stay quiet.
+                    print("    🔇 (noise — ignored)")
+                    self._chat.drop_last_exchange()
+                    return
+
             if turn.reply:
                 print(f"🤖  Reachy: {turn.reply}\n")
                 await self._play(turn.reply, turn.language)

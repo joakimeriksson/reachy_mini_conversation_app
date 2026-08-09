@@ -98,6 +98,19 @@ class OllamaChat:
                     msg["content"] = text
                 return
 
+    def drop_last_exchange(self) -> None:
+        """Remove the most recent user turn and everything after it.
+
+        Used by the noise gate: when Whisper decides an utterance contained no
+        speech, the exchange it triggered (user audio + assistant reply + any tool
+        traffic) must leave the history — otherwise every gust of room noise adds
+        a phantom exchange the model treats as context.
+        """
+        for i in range(len(self._messages) - 1, -1, -1):
+            if self._messages[i].get("role") == "user":
+                del self._messages[i:]
+                return
+
     def reset(self) -> None:
         """Clear conversation history, keeping the current system prompt."""
         self._messages = [{"role": "system", "content": self._system_prompt}]

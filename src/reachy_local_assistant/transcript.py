@@ -80,6 +80,19 @@ class Transcript:
                     return True
             return False
 
+    def remove(self, seq: int) -> bool:
+        """Delete message *seq*; False if it is gone or unknown.
+
+        Used by the noise gate: a pending "🎤 …" line whose audio turned out to be
+        room noise must disappear, not sit in the conversation as a ghost turn.
+        """
+        with self._lock:
+            for i, message in enumerate(self._messages):
+                if message.seq == seq:
+                    del self._messages[i]
+                    return True
+            return False
+
     def messages(self, since: int = 0) -> List[Message]:
         """Return messages with ``seq > since`` (all of them when *since* is 0)."""
         with self._lock:

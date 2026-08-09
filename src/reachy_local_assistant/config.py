@@ -211,9 +211,13 @@ class Config:
     TTS_FORMAT: str  # wav/flac/ogg (decoded via soundfile)
     TTS_API_KEY: str | None  # optional bearer token
     # Whisper STT on the same voice server (/v1/audio/transcriptions). In direct-audio
-    # mode the app transcribes the turn AFTER replying and keeps the TEXT in history
+    # mode the app transcribes the turn WHILE the model thinks and keeps the TEXT in history
     # (KV-cache-friendly, no audio bloat). Defaults to the TTS host; empty = keep audio.
     STT_URL: str
+    # Drop a turn when Whisper hears no speech in it (requires STT_URL). The VAD
+    # fires on any sustained sound; this is the "was that actually words?" check
+    # that stops Reachy answering chair scrapes. Off = never drop turns.
+    NOISE_GATE: bool
 
     # VAD tuning (see audio/vad.py).
     VAD_AGGRESSIVENESS = _env_int("VAD_AGGRESSIVENESS", 2)
@@ -339,6 +343,7 @@ class Config:
         cls.TTS_FORMAT = os.getenv("TTS_FORMAT", "wav")
         cls.TTS_API_KEY = os.getenv("TTS_API_KEY")
         cls.STT_URL = os.getenv("STT_URL") or (cls.TTS_URL.replace("/audio/speech", "/audio/transcriptions") if cls.TTS_URL else "")
+        cls.NOISE_GATE = _env_flag("NOISE_GATE", default=True)
 
 
 Config.reload()  # populate the backend settings from the environment at import

@@ -189,3 +189,79 @@ async def test_personality_switch_clears_the_hint() -> None:
     await handler.apply_personality("noir_detective")
 
     assert handler._lang_history.hint() == ""
+
+
+# --- noise gate -------------------------------------------------------------
+
+
+def _noise_gate_handler(transcript_result: object) -> OllamaConversationHandler:
+    """Handler wired for a direct-audio turn whose Whisper result is *transcript_result*."""
+    handler = _ready_handler("svar på brus")
+    handler._stt_remote = MagicMock(enabled=True)
+    if isinstance(transcript_result, Exception):
+        handler._stt_remote.transcribe = AsyncMock(side_effect=transcript_result)
+    else:
+        handler._stt_remote.transcribe = AsyncMock(return_value=transcript_result)
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_noise_gate_drops_a_turn_with_an_empty_transcript(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The VAD fires on any sustained sound; Whisper is the words-or-not check.
+
+    An empty transcript must mean: no spoken reply, no phantom exchange left in
+    the model's history, and no ghost line in the visible transcript.
+    """
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.OLLAMA_DIRECT_AUDIO", True)
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.NOISE_GATE", True)
+    handler = _noise_gate_handler(("", ""))
+
+    await handler._handle_turn(np.zeros(1600, dtype=np.int16))
+
+    handler._speak.assert_not_awaited()
+    handler._chat.drop_last_exchange.assert_called_once()
+    assert handler.transcript.messages() == []
+
+
+@pytest.mark.asyncio
+async def test_real_speech_passes_the_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transcribed utterance must flow through unchanged: swap, speak, record."""
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.OLLAMA_DIRECT_AUDIO", True)
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.NOISE_GATE", True)
+    handler = _noise_gate_handler(("hej Reachy, hur mår du idag?", "sv"))
+
+    await handler._handle_turn(np.zeros(1600, dtype=np.int16))
+
+    handler._speak.assert_awaited_once()
+    handler._chat.drop_last_exchange.assert_not_called()
+    assert [(m.role, m.content) for m in handler.transcript.messages()] == [
+        ("user", "hej Reachy, hur mår du idag?"),
+        ("assistant", "svar på brus"),
+    ]
+    assert handler._lang_history.hint() == "sv"
+
+
+@pytest.mark.asyncio
+async def test_whisper_failure_keeps_the_turn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A down transcription service must degrade to the old behavior, not mute Reachy."""
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.OLLAMA_DIRECT_AUDIO", True)
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.NOISE_GATE", True)
+    handler = _noise_gate_handler(RuntimeError("whisper down"))
+
+    await handler._handle_turn(np.zeros(1600, dtype=np.int16))
+
+    handler._speak.assert_awaited_once()
+    handler._chat.drop_last_exchange.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_noise_gate_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """NOISE_GATE=0: transcription still runs, but no turn is ever dropped."""
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.OLLAMA_DIRECT_AUDIO", True)
+    monkeypatch.setattr("reachy_local_assistant.ollama_handler.config.NOISE_GATE", False)
+    handler = _noise_gate_handler(("", ""))
+
+    await handler._handle_turn(np.zeros(1600, dtype=np.int16))
+
+    handler._speak.assert_awaited_once()
+    handler._chat.drop_last_exchange.assert_not_called()

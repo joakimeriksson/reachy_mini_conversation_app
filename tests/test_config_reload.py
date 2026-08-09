@@ -111,3 +111,16 @@ def test_env_overrides_survive_a_reload_round_trip(monkeypatch: pytest.MonkeyPat
     os.environ["OLLAMA_MODEL"] = "gemma4:9b"
     Config.reload()
     assert Config.OLLAMA_MODEL == "gemma4:9b"
+
+
+def test_noise_gate_is_on_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answering room noise is the worst default; the gate must be opt-OUT."""
+    monkeypatch.delenv("NOISE_GATE", raising=False)
+
+    Config.reload()
+
+    assert Config.NOISE_GATE is True
+
+    monkeypatch.setenv("NOISE_GATE", "0")
+    Config.reload()
+    assert Config.NOISE_GATE is False

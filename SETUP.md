@@ -185,6 +185,7 @@ python scripts/latency_bench.py         # per-stage latency, needs both backends
 | Wrong voice, warning in the voice-server log | Voice name doesn't match the engine | Use `af_heart`-style for `kokoro`, `Stina`-style for `kokoro-svml` |
 | Transcript shows only 🎤 | Server started without `--whisper` | Restart it with `--whisper base` |
 | Reachy interrupts itself | Its own voice re-entering the mic | Use headphones, or set `AEC=1` (needs `uv sync --extra aec`) |
+| Answers when nobody spoke | Whisper off, so the noise gate can't run | Start the voice server with `--whisper base` (the gate drops turns Whisper hears no words in) |
 | Never stops listening | VAD too lenient | `VAD_AGGRESSIVENESS=3`, lower `VAD_SILENCE_MS` |
 | Settings changes lost on restart | — | Save from the settings page; it persists to the instance `.env` |
 

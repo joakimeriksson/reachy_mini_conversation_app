@@ -202,6 +202,14 @@ class OllamaConversationHandler(AsyncStreamHandler):
                 self._pending_user_seq = self.transcript.add("user", content)
                 await self.output_queue.put(AdditionalOutputs({"role": "user", "content": content}))
 
+            # Direct-audio: transcribe CONCURRENTLY with the LLM call. Whisper is
+            # usually done first (CPU int8 vs a full Gemma generation), so this is
+            # free — and having the transcript *before* speaking enables the noise
+            # gate below and lets this turn's language inform its own reply.
+            transcribe_task: asyncio.Task[Tuple[str, str]] | None = None
+            if config.OLLAMA_DIRECT_AUDIO and self._stt_remote is not None and self._stt_remote.enabled:
+                transcribe_task = asyncio.create_task(self._stt_remote.transcribe(utterance, VAD_SAMPLE_RATE))
+
             turn = await generate_reply(
                 self._stt,
                 self._chat,
@@ -212,18 +220,16 @@ class OllamaConversationHandler(AsyncStreamHandler):
             )
             self.last_activity_time = asyncio.get_event_loop().time()
             # Cascade mode detects the language before replying, so it can inform
-            # this very turn (direct-audio mode records it after, via Whisper).
+            # this very turn (direct-audio mode gets it from Whisper, below).
             self._lang_history.record(turn.language, turn.user_text)
+
+            if transcribe_task is not None and not await self._apply_transcript(transcribe_task):
+                return  # noise gate: the "utterance" contained no speech — drop the turn
+
             if turn.reply:
                 self.transcript.add("assistant", turn.reply)
                 await self.output_queue.put(AdditionalOutputs({"role": "assistant", "content": turn.reply}))
-                # Speak the reply and (direct-audio) transcribe the turn concurrently:
-                # Whisper hides under the reply's playback, then swaps the audio blob in
-                # history for text — lighter + KV-cache-friendly. Best-effort.
-                await asyncio.gather(
-                    self._speak(turn.reply, turn.language),
-                    self._transcribe_and_swap(utterance),
-                )
+                await self._speak(turn.reply, turn.language)
         except Exception as exc:
             logger.exception("Turn failed: %s", exc)
         finally:
@@ -240,27 +246,50 @@ class OllamaConversationHandler(AsyncStreamHandler):
             self._set_listening(True)
             self.last_activity_time = asyncio.get_event_loop().time()
 
-    async def _transcribe_and_swap(self, utterance: NDArray[np.int16]) -> None:
-        """Direct-audio: transcribe the turn via Whisper and store TEXT in history.
+    async def _apply_transcript(self, transcribe_task: "asyncio.Task[Tuple[str, str]]") -> bool:
+        """Fold Whisper's result into the turn; False means "this was noise, drop it".
 
-        Runs concurrently with the reply's playback (off the critical path). Replaces
-        the audio blob in the chat history with the transcript so history stays light
-        and KV-cache-friendly. Best-effort: if Whisper is unreachable the audio stays.
+        The VAD triggers on any sustained sound — measured on a quiet Mac it fired
+        8 times in 70 s of nobody speaking, and tuning (aggressiveness, silero
+        thresholds) could not get it to zero. Whisper is the check the VAD can't
+        do: it runs on every turn anyway, and with the server's vad_filter a
+        noise-only utterance comes back as EMPTY text. An empty transcript means
+        the exchange it triggered leaves the model history, the pending line
+        leaves the visible transcript, and Reachy stays quiet.
+
+        Best-effort by design: if Whisper is unreachable the turn is kept — a
+        down transcription service must degrade to the old behavior, not mute
+        the robot. NOISE_GATE=0 keeps the transcription but never drops turns.
         """
-        if not (config.OLLAMA_DIRECT_AUDIO and self._stt_remote and self._stt_remote.enabled):
-            return
-        text, lang = await self._stt_remote.transcribe(utterance, VAD_SAMPLE_RATE)
+        try:
+            text, lang = await transcribe_task
+        except Exception as exc:
+            logger.warning("Turn transcription failed (keeping the turn): %s", exc)
+            return True
+
         # Whisper heard the user directly, which is a far better language signal
-        # than guessing from Reachy's own reply — remember it for later turns,
-        # weighted by how much was actually said.
+        # than guessing from Reachy's own reply — and it lands BEFORE this turn's
+        # TTS, so a language switch takes effect on the turn you switch.
         self._lang_history.record(lang, text)
-        if text and self._chat is not None:
-            self._chat.replace_last_user_audio_with_text(text)
+
+        if text.strip():
+            if self._chat is not None:
+                self._chat.replace_last_user_audio_with_text(text)
             # Upgrade the placeholder line in place so the transcript shows one
             # user turn, not a mic glyph followed by its own transcription.
             if self._pending_user_seq is not None:
                 self.transcript.update(self._pending_user_seq, text)
             await self.output_queue.put(AdditionalOutputs({"role": "user", "content": f"📝 {text}"}))
+            return True
+
+        if not config.NOISE_GATE:
+            return True
+        logger.info("Noise gate: Whisper heard no speech in the utterance — dropping the turn")
+        if self._chat is not None:
+            self._chat.drop_last_exchange()
+        if self._pending_user_seq is not None:
+            self.transcript.remove(self._pending_user_seq)
+        return False
 
     async def _speak(self, text: str, language: str | None = None) -> None:
         """Synthesize *text* sentence-by-sentence and stream each to wobbler + player.

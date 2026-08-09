@@ -16,9 +16,10 @@ tags:
 
 A **fully local** conversational app for the Reachy Mini robot: speech, reasoning,
 and vision run on **Ollama (Gemma)** and the voice on a **self-hosted voice
-server** (Kokoro TTS + Whisper STT) — no cloud, no API keys. A fork of Pollen's
-conversation app with the OpenAI Realtime backend **replaced by a local, on-prem
-stack**.
+server** (Kokoro TTS + Whisper STT) — no cloud, no API keys. Originally derived
+from [Pollen's conversation app](https://github.com/pollen-robotics/reachy_mini_conversation_app),
+now an independent project built around a **local, on-prem stack**; Pollen's app
+(which went the cloud-realtime route) is still watched for ideas worth porting.
 
 > [!IMPORTANT]
 > Two services must be running before the app can hold a conversation: **Ollama**

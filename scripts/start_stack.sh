@@ -153,12 +153,13 @@ fi
 if up "$VOICE_ORIGIN/health"; then
     echo "Voice server already running at $VOICE_ORIGIN"
 elif [[ "$VOICE_ORIGIN" == *localhost* || "$VOICE_ORIGIN" == *127.0.0.1* ]]; then
+    [[ -f voice-server/voice_server.py ]] || { echo "voice-server submodule missing — run: git submodule update --init" >&2; exit 1; }
     [[ -d voice-server/.venv ]] || { echo "voice-server not set up — run: cd voice-server && uv sync" >&2; exit 1; }
     echo "Starting voice server (engine=$VOICE_ENGINE, whisper=$WHISPER_MODEL, langs=$VOICE_LANGS)..."
     (
         cd voice-server
         # --langs is only read by the Swedish engines; base kokoro ignores it.
-        PYTORCH_ENABLE_MPS_FALLBACK=1 uv run python ../scripts/voice_server.py \
+        PYTORCH_ENABLE_MPS_FALLBACK=1 uv run python voice_server.py \
             --engine "$VOICE_ENGINE" --voice "$VOICE_VOICE" \
             --port "$VOICE_PORT" --whisper "$WHISPER_MODEL" --langs "$VOICE_LANGS"
     ) >/tmp/reachy-voice-server.log 2>&1 &

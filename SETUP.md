@@ -57,10 +57,12 @@ Nothing printed → the model is not pulled, and the app will refuse to answer.
 
 ## 2. Voice server
 
-This lives in `voice-server/`, a **separate uv project** — its Kokoro/torch stack
-conflicts with the app's pinned dependencies, so it gets its own environment.
+This is the [kokoro-voice-server](https://github.com/joakimeriksson/kokoro-voice-server)
+repo, included as the `voice-server/` **submodule** — a separate uv project,
+since its Kokoro/torch stack conflicts with the app's pinned dependencies.
 
 ```bash
+git submodule update --init   # first time only
 cd voice-server
 uv sync            # downloads torch + kokoro + faster-whisper; takes a few minutes
 ```
@@ -80,12 +82,12 @@ uv sync            # downloads torch + kokoro + faster-whisper; takes a few minu
 
 ```bash
 # Default engine — nothing outside this repo needed
-uv run python ../scripts/voice_server.py \
+uv run python voice_server.py \
     --engine kokoro --voice af_heart --host 0.0.0.0 --port 8880 --whisper base
 
 # Swedish (needs the swedish-kokoro checkout)
 PYTORCH_ENABLE_MPS_FALLBACK=1 SWEDISH_KOKORO_PATH=/abs/path/to/swedish-kokoro \
-  uv run python ../scripts/voice_server.py \
+  uv run python voice_server.py \
       --engine kokoro-svml --voice Stina --host 0.0.0.0 --port 8880 --whisper base
 ```
 

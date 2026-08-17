@@ -1,0 +1,3 @@
+[submodule "voice-server"]
+	path = voice-server
+	url = https://github.com/joakimeriksson/kokoro-voice-server

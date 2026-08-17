@@ -112,17 +112,20 @@ uv sync --group dev                # dev tooling (pytest/ruff/mypy)
 
 **→ Full walkthrough with verification at each step: [SETUP.md](SETUP.md).**
 
-Three processes. The voice server lives in **its own environment**
-(`voice-server/`) because its Kokoro/torch stack conflicts with the app's pins.
+Three processes. The voice server is the standalone
+[kokoro-voice-server](https://github.com/joakimeriksson/kokoro-voice-server)
+repo, included as the `voice-server/` **submodule** with its own environment
+(its Kokoro/torch stack conflicts with the app's pins). After cloning, run
+`git submodule update --init`.
 
 ```bash
 # 1. Ollama — must listen on all interfaces if the robot/app is on another machine
 OLLAMA_HOST=0.0.0.0 ollama serve
 ollama pull gemma4:latest
 
-# 2. Voice server (TTS + Whisper STT) — its own uv project
+# 2. Voice server (TTS + Whisper STT) — its own uv project (submodule)
 cd voice-server && uv sync
-uv run python ../scripts/voice_server.py \
+uv run python voice_server.py \
     --engine kokoro --voice af_heart --port 8880 --whisper base
 
 # 3. The app

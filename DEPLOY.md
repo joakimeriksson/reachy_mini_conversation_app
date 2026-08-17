@@ -80,7 +80,7 @@ own environment (see [voice-server/README.md](voice-server/README.md)):
 ```bash
 cd voice-server && uv sync
 PYTORCH_ENABLE_MPS_FALLBACK=1 SWEDISH_KOKORO_PATH=/abs/path/to/swedish-kokoro \
-  uv run python ../scripts/voice_server.py \
+  uv run python voice_server.py \
       --engine kokoro-svml --voice Stina --port 8880 --whisper base
 ```
 
@@ -136,7 +136,7 @@ Engines, voices, Whisper, and running it as a service are documented in
 
 ```bash
 cd voice-server && uv sync
-PYTORCH_ENABLE_MPS_FALLBACK=1 uv run python ../scripts/voice_server.py \
+PYTORCH_ENABLE_MPS_FALLBACK=1 uv run python voice_server.py \
     --engine kokoro-svml --voice Stina --port 8880 --whisper base
 ```
 
@@ -147,7 +147,7 @@ TTS_VOICE=Stina
 
 All engines return WAV that `RemoteTTS` decodes via `soundfile` (Kokoro @ 24 kHz).
 Bind to `0.0.0.0` and open the port so the robot/client can reach it.
-`scripts/voice_server.py` lives outside `src/`, so it never ships in the robot wheel.
+`voice-server/voice_server.py` lives outside `src/`, so it never ships in the robot wheel.
 
 ---
 

@@ -38,11 +38,18 @@ daemon runs on the robot's Linux, and the camera comes from `robot.media`.
   the **API**, not `/` — since SDK 1.9.0 the web dashboard is gone and `/` only
   serves a "download the desktop app" page:
   ```bash
-  curl -s http://reachy-mini.local:8000/api/daemon/status | grep -o '"ready":[a-z]*'
+  curl -s http://reachy-mini.local:8000/api/daemon/status | grep -o '"state":"[a-z]*"'
   ```
-  Launch the app only once that reads `"ready":true` — after a firmware update
-  the motor backend can sit at `ready:false`, and the app then hangs at "Using
-  WebRTC streaming backend". A robot reboot cures it.
+  `"state":"running"` is what matters.
+
+  > **Do not gate on `backend_status.ready`.** It stays `false` (with
+  > `last_alive: null`) on a perfectly healthy robot: those fields are only
+  > written once the daemon's WebSocket publishers are wired, and a client that
+  > connects in **network / WebRTC** mode never triggers that. Verified on a
+  > wireless unit at SDK 1.9.0 — `ready:false`, `nb_error:0`, control loop at
+  > ~50 Hz, and the app held a full conversation (mic, LLM, speech, tool calls)
+  > the whole time. Judge readiness by the app's own startup log instead:
+  > `Backend OK — …` lines followed by `Ollama conversation handler ready`.
 
   If `reachy-mini.local` doesn't resolve, use the robot's IP, or pass
   `--robot-name <name>` to the app if the robot has a custom name.

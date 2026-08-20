@@ -5,7 +5,7 @@ colorFrom: red
 colorTo: blue
 sdk: static
 pinned: false
-short_description: Talk with Reachy Mini — fully local (Ollama + Kokoro voice server)
+short_description: Talk with Reachy Mini — fully local (Ollama + Kokoro)
 suggested_storage: large
 tags:
  - reachy_mini

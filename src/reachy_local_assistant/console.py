@@ -43,6 +43,24 @@ except Exception:  # pragma: no cover - only loaded when settings_app is used
 logger = logging.getLogger(__name__)
 
 
+def _same_origin(a: str, b: str) -> bool:
+    """Whether two URLs share a scheme://host:port (empty ``a`` counts as a match).
+
+    Used to decide whether a derived STT_URL should follow the TTS host when it
+    moves: it should when Whisper lived on the old TTS host, and must not when
+    the user deliberately put it somewhere else.
+    """
+    from urllib.parse import urlparse
+
+    if not a:
+        return True
+    try:
+        pa, pb = urlparse(a), urlparse(b or "")
+        return bool(pa.netloc) and (pa.scheme, pa.netloc) == (pb.scheme, pb.netloc)
+    except Exception:
+        return False
+
+
 class LocalStream:
     """LocalStream using Reachy Mini's recorder/player."""
 
@@ -408,6 +426,8 @@ class LocalStream:
             ollama_url: Optional[str] = None
             tts_url: Optional[str] = None
             tts_voice: Optional[str] = None
+            # Optional: only needed when Whisper runs on a different host than TTS.
+            stt_url: Optional[str] = None
 
         @self._settings_app.post("/backends/save")
         def _backends_save(payload: BackendsPayload) -> JSONResponse:
@@ -422,6 +442,7 @@ class LocalStream:
                 changed.append("OLLAMA_URL")
             # A TTS URL implies the remote voice-server backend.
             if tts_url:
+                previous_tts = getattr(config, "TTS_URL", "") or ""
                 config.TTS_URL = tts_url
                 config.TTS_BACKEND = "remote"
                 os.environ["TTS_URL"] = tts_url
@@ -429,6 +450,20 @@ class LocalStream:
                 self._persist_env_var("TTS_URL", tts_url)
                 self._persist_env_var("TTS_BACKEND", "remote")
                 changed.append("TTS_URL")
+                # STT_URL is DERIVED from TTS_URL, but only in Config.reload() — i.e.
+                # at startup. Without this, moving the voice server from this page
+                # left Whisper pointed at the old host until the next restart, which
+                # silently disarms the noise gate and drops the language evidence.
+                # Only follow the move when Whisper lived on the old TTS host; a
+                # deliberately split-host STT_URL is left alone.
+                stt_url = (payload.stt_url or "").strip()
+                if not stt_url and _same_origin(getattr(config, "STT_URL", ""), previous_tts):
+                    stt_url = tts_url.replace("/audio/speech", "/audio/transcriptions")
+                if stt_url:
+                    config.STT_URL = stt_url
+                    os.environ["STT_URL"] = stt_url
+                    self._persist_env_var("STT_URL", stt_url)
+                    changed.append("STT_URL")
             if tts_voice:
                 config.TTS_VOICE = tts_voice
                 os.environ["TTS_VOICE"] = tts_voice

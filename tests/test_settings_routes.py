@@ -130,3 +130,55 @@ def test_mcp_tools_toggle_persists_and_filters(
     client.post("/mcp/tools", json={"disabled": []})
     assert config.MCP_DISABLED_TOOLS == ""
     assert [s["name"] for s in core_tools.get_tool_specs()] == ["camera", "mcp_lights"]
+
+
+def test_saving_a_new_tts_host_moves_whisper_with_it(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """STT_URL is derived from TTS_URL, but only at startup.
+
+    Moving the voice server from the settings page used to leave Whisper on the
+    old host until the next restart, which silently disarms the noise gate and
+    drops the per-turn language evidence.
+    """
+    from reachy_local_assistant.config import config
+
+    monkeypatch.setattr(config, "TTS_URL", "http://old-host:8880/v1/audio/speech")
+    monkeypatch.setattr(config, "STT_URL", "http://old-host:8880/v1/audio/transcriptions")
+
+    client.post("/backends/save", json={"tts_url": "http://new-host:8880/v1/audio/speech"})
+
+    assert config.TTS_URL == "http://new-host:8880/v1/audio/speech"
+    assert config.STT_URL == "http://new-host:8880/v1/audio/transcriptions"
+
+
+def test_a_split_host_whisper_is_left_alone(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Whisper deliberately placed on another host must not follow the TTS move."""
+    from reachy_local_assistant.config import config
+
+    monkeypatch.setattr(config, "TTS_URL", "http://old-host:8880/v1/audio/speech")
+    monkeypatch.setattr(config, "STT_URL", "http://whisper-box:9000/v1/audio/transcriptions")
+
+    client.post("/backends/save", json={"tts_url": "http://new-host:8880/v1/audio/speech"})
+
+    assert config.STT_URL == "http://whisper-box:9000/v1/audio/transcriptions"
+
+
+def test_an_explicit_stt_url_wins(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The payload can point Whisper anywhere, regardless of the TTS host."""
+    from reachy_local_assistant.config import config
+
+    monkeypatch.setattr(config, "TTS_URL", "http://old-host:8880/v1/audio/speech")
+    monkeypatch.setattr(config, "STT_URL", "http://old-host:8880/v1/audio/transcriptions")
+
+    client.post(
+        "/backends/save",
+        json={
+            "tts_url": "http://new-host:8880/v1/audio/speech",
+            "stt_url": "http://whisper-box:9000/v1/audio/transcriptions",
+        },
+    )
+
+    assert config.STT_URL == "http://whisper-box:9000/v1/audio/transcriptions"

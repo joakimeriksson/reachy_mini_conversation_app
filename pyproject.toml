@@ -119,7 +119,8 @@ reachy_local_data = [
 
 [tool.ruff]
 line-length = 119
-exclude = [".venv", "dist", "build", "**/__pycache__", "*.egg-info", ".mypy_cache", ".pytest_cache"]
+# voice-server/ is a git submodule (its own repo + CI); lint it there, not here.
+exclude = [".venv", "dist", "build", "**/__pycache__", "*.egg-info", ".mypy_cache", ".pytest_cache", "voice-server"]
 
 [tool.ruff.lint]
 select = [

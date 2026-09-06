@@ -159,8 +159,11 @@ elif [[ "$VOICE_ORIGIN" == *localhost* || "$VOICE_ORIGIN" == *127.0.0.1* ]]; the
     (
         cd voice-server
         # --langs is only read by the Swedish engines; base kokoro ignores it.
+        # --host :: serves BOTH IP families. A robot resolving this machine by
+        # mDNS name may connect over either one, and a single-family bind makes
+        # the voice server look unreachable to it while other services answer.
         PYTORCH_ENABLE_MPS_FALLBACK=1 uv run python voice_server.py \
-            --engine "$VOICE_ENGINE" --voice "$VOICE_VOICE" \
+            --engine "$VOICE_ENGINE" --voice "$VOICE_VOICE" --host :: \
             --port "$VOICE_PORT" --whisper "$WHISPER_MODEL" --langs "$VOICE_LANGS"
     ) >/tmp/reachy-voice-server.log 2>&1 &
     STARTED_PIDS+=($!)
